@@ -1,0 +1,3 @@
+# Python deps for kubernetes.core (k8s* modules).
+ansible-core>=2.15
+kubernetes>=28.0.0

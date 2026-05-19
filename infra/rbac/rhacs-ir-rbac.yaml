@@ -1,0 +1,61 @@
+# ServiceAccount + least-privilege ClusterRole for RHACS incident-response playbook ops.
+# Apply: oc apply -k infra/rbac/
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rhacs-incident-response
+  labels:
+    app.kubernetes.io/name: rhacs-incident-response
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rhacs-ir-runner
+  namespace: rhacs-incident-response
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: rhacs-ir-openshift-ops
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["nodes/proxy"]
+    verbs: ["get", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["nodes/log"]
+    verbs: ["get"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: rhacs-ir-openshift-ops
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: rhacs-ir-openshift-ops
+subjects:
+  - kind: ServiceAccount
+    name: rhacs-ir-runner
+    namespace: rhacs-incident-response
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rhacs-ir-runner-token
+  namespace: rhacs-incident-response
+  annotations:
+    kubernetes.io/service-account.name: rhacs-ir-runner
+type: kubernetes.io/service-account-token

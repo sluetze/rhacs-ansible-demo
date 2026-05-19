@@ -1,0 +1,15 @@
+{
+  "alert": {
+    "id": "sample",
+    "time": "2026-05-07T12:00:00Z",
+    "policy": {
+      "name": "Demo Unexpected Process"
+    },
+    "deployment": {
+      "namespace": "demo-app",
+      "name": "workload",
+      "id": "replacewith-deployment-id"
+    },
+    "pod": "malicious-pod-abc12"
+  }
+}

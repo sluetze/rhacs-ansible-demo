@@ -1,0 +1,257 @@
+---
+# Containment + forensics when driven by RHACS (via EDA / Controller extra vars).
+# Authenticate with the rhacs-ir-runner ServiceAccount token (or equivalent RBAC), not cluster-admin.
+#
+# Required extra vars (either explicit or from rhacs_webhook_payload):
+#   - target_namespace
+#   - target_pod
+# Optional:
+#   - target_container (defaults to first container in pod)
+#   - networkpolicy_name, policy_name
+#   - evidence_dir (default: ~/rhacs-ir-evidence/<timestamp> on controller)
+#   - ocp_api, ocp_token, ocp_verify_ssl (or kubeconfig via K8s auth preference)
+#   - skip_checkpoint: true to skip kubelet checkpoint call
+#   - use_oc_for_node_logs: true uses oc adm node-logs (default false for AAP without oc CLI)
+#
+- name: RHACS incident response — logs, optional checkpoint, NetworkPolicy containment
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    # Prefer active venv (source .venv/bin/activate) or set RHACS_ANSIBLE_PYTHON to your interpreter
+    ansible_python_interpreter: >-
+      {{ (lookup('env', 'VIRTUAL_ENV') ~ '/bin/python') if (lookup('env', 'VIRTUAL_ENV', default='') | length > 0)
+         else lookup('env', 'RHACS_ANSIBLE_PYTHON', default='/usr/bin/python3') }}
+
+  pre_tasks:
+    - name: Require OpenShift API URL and bearer token
+      ansible.builtin.assert:
+        that:
+          - ocp_api is defined and ocp_api | length > 0
+          - ocp_token is defined and ocp_token | length > 0
+        fail_msg: >-
+          Define ocp_api (e.g. https://api.cluster:6443) and ocp_token (ServiceAccount bearer
+          from rhacs-ir-runner-token secret).
+
+    - name: Derive target_namespace from RHACS webhook when unset
+      ansible.builtin.set_fact:
+        target_namespace: "{{ rhacs_webhook_payload.alert.deployment.namespace }}"
+      when:
+        - rhacs_webhook_payload is defined
+        - target_namespace is not defined
+        - rhacs_webhook_payload.alert.deployment is defined
+        - rhacs_webhook_payload.alert.deployment.namespace is defined
+
+    - name: Derive target_pod from RHACS webhook when unset
+      ansible.builtin.set_fact:
+        target_pod: >-
+          {{
+            (rhacs_webhook_payload.alert.pod if rhacs_webhook_payload.alert.pod is string
+             else rhacs_webhook_payload.alert.pod.name)
+          }}
+      when:
+        - rhacs_webhook_payload is defined
+        - target_pod is not defined
+        - rhacs_webhook_payload.alert is defined
+        - rhacs_webhook_payload.alert.pod is defined
+
+    - name: Derive policy name from RHACS alert
+      ansible.builtin.set_fact:
+        policy_name: "{{ rhacs_webhook_payload.alert.policy.name }}"
+      when:
+        - rhacs_webhook_payload is defined
+        - policy_name is not defined
+        - rhacs_webhook_payload.alert.policy is defined
+        - rhacs_webhook_payload.alert.policy.name is defined
+
+    - name: Fail when required target vars are missing
+      ansible.builtin.assert:
+        that:
+          - target_namespace is defined and target_namespace | length > 0
+          - target_pod is defined and target_pod | length > 0
+        fail_msg: "Set target_namespace and target_pod (or pass rhacs_webhook_payload from RHACS/EDA)."
+
+  tasks:
+    - name: Look up pod
+      kubernetes.core.k8s_info:
+        host: "{{ ocp_api }}"
+        api_key: "{{ ocp_token }}"
+        validate_certs: "{{ ocp_verify_ssl | default(true) }}"
+        kind: Pod
+        namespace: "{{ target_namespace }}"
+        name: "{{ target_pod }}"
+      register: pod_query
+
+    - name: Fail if pod not found
+      ansible.builtin.assert:
+        that:
+          - pod_query.resources | length == 1
+        fail_msg: "Pod {{ target_pod }} not found in namespace {{ target_namespace }}."
+
+    - name: Derive facts from pod
+      ansible.builtin.set_fact:
+        pod_obj: "{{ pod_query.resources[0] }}"
+        target_node: "{{ pod_query.resources[0].spec.nodeName }}"
+        target_container: "{{ target_container
+          | default((pod_query.resources[0].spec.containers | first).name) }}"
+
+    - name: Compute NetworkPolicy matchLabels from pod metadata
+      ansible.builtin.set_fact:
+        networkpolicy_match_labels: "{{ networkpolicy_match_labels | default(pod_obj.metadata.labels | default({})) }}"
+
+    - name: Set evidence directory
+      ansible.builtin.set_fact:
+        evidence_dir: >-
+          {{
+            evidence_dir
+            | default(lookup('env', 'HOME') ~ '/rhacs-ir-evidence/'
+              ~ ansible_date_time.iso8601_basic_short)
+          }}
+
+    - name: Create evidence directory
+      ansible.builtin.file:
+        path: "{{ evidence_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Save pod manifest (sanitized context)
+      ansible.builtin.copy:
+        dest: "{{ evidence_dir }}/pod-{{ target_pod }}.yaml"
+        mode: "0600"
+        content: "{{ pod_obj | to_nice_yaml }}"
+
+    - name: Fetch container logs (current)
+      kubernetes.core.k8s_log:
+        host: "{{ ocp_api }}"
+        api_key: "{{ ocp_token }}"
+        validate_certs: "{{ ocp_verify_ssl | default(true) }}"
+        namespace: "{{ target_namespace }}"
+        name: "{{ target_pod }}"
+        container: "{{ target_container }}"
+      register: pod_logs
+      tags: [logs]
+
+    - name: Write container logs to evidence
+      ansible.builtin.copy:
+        dest: "{{ evidence_dir }}/pod-{{ target_pod }}-{{ target_container }}.log"
+        mode: "0600"
+        content: "{{ pod_logs.log }}"
+
+    - name: Try previous-instance container logs
+      kubernetes.core.k8s_log:
+        host: "{{ ocp_api }}"
+        api_key: "{{ ocp_token }}"
+        validate_certs: "{{ ocp_verify_ssl | default(true) }}"
+        namespace: "{{ target_namespace }}"
+        name: "{{ target_pod }}"
+        container: "{{ target_container }}"
+        previous: true
+      register: pod_logs_prev
+      ignore_errors: true
+      tags: [logs]
+
+    - name: Write previous logs if present
+      ansible.builtin.copy:
+        dest: "{{ evidence_dir }}/pod-{{ target_pod }}-{{ target_container }}-previous.log"
+        mode: "0600"
+        content: "{{ pod_logs_prev.log }}"
+      when: pod_logs_prev.log is defined and (pod_logs_prev.log | length) > 0
+      tags: [logs]
+
+    - name: Capture kubelet unit logs from node (oc)
+      ansible.builtin.command:
+        argv:
+          - oc
+          - adm
+          - node-logs
+          - "{{ target_node }}"
+          - -u
+          - kubelet
+          - "--tail={{ node_log_tail | default(5000) | int }}"
+      register: node_logs_kubelet
+      changed_when: false
+      when: use_oc_for_node_logs | default(false) | bool
+      tags: [logs]
+
+    - name: Capture crio unit logs from node (oc)
+      ansible.builtin.command:
+        argv:
+          - oc
+          - adm
+          - node-logs
+          - "{{ target_node }}"
+          - -u
+          - crio
+          - "--tail={{ node_log_tail | default(5000) | int }}"
+      register: node_logs_crio
+      changed_when: false
+      when: use_oc_for_node_logs | default(false) | bool
+      tags: [logs]
+
+    - name: Write kubelet node logs
+      ansible.builtin.copy:
+        dest: "{{ evidence_dir }}/node-{{ target_node }}-kubelet.log"
+        mode: "0600"
+        content: "{{ node_logs_kubelet.stdout }}"
+      when: use_oc_for_node_logs | default(false) | bool and node_logs_kubelet is not failed
+      tags: [logs]
+
+    - name: Write crio node logs
+      ansible.builtin.copy:
+        dest: "{{ evidence_dir }}/node-{{ target_node }}-crio.log"
+        mode: "0600"
+        content: "{{ node_logs_crio.stdout }}"
+      when: use_oc_for_node_logs | default(false) | bool and node_logs_crio is not failed
+      tags: [logs]
+
+    - name: Trigger kubelet forensic checkpoint (POST node proxy)
+      when: not (skip_checkpoint | default(false) | bool)
+      ansible.builtin.uri:
+        url: >-
+          {{ ocp_api }}/api/v1/nodes/{{ target_node }}/proxy/checkpoint/{{
+          target_namespace | urlencode }}/{{ target_pod | urlencode }}/{{
+          target_container | urlencode }}
+        method: POST
+        body_format: json
+        headers:
+          Authorization: "Bearer {{ ocp_token }}"
+        validate_certs: "{{ ocp_verify_ssl | default(true) }}"
+        status_code: [200, 201, 202]
+        timeout: 300
+      register: checkpoint_response
+      failed_when: false
+      tags: [checkpoint]
+
+    - name: Save checkpoint API response
+      ansible.builtin.copy:
+        dest: "{{ evidence_dir }}/checkpoint-response.json"
+        mode: "0600"
+        content: "{{ checkpoint_response | to_nice_json }}"
+      when: not (skip_checkpoint | default(false) | bool) and checkpoint_response is defined
+      tags: [checkpoint]
+
+    - name: Note checkpoint failure (check CRI-O CRIU / permissions)
+      ansible.builtin.debug:
+        msg: >-
+          Checkpoint HTTP {{ checkpoint_response.status | default('n/a') }} —
+          see {{ evidence_dir }}/checkpoint-response.json.
+          If 403/404, confirm RBAC nodes/proxy CREATE and CRIU enablement on workers.
+      when:
+        - not (skip_checkpoint | default(false) | bool)
+        - checkpoint_response.status | default(200) not in [200, 201, 202]
+      tags: [checkpoint]
+
+    - name: Apply deny-all NetworkPolicy for matched pod labels
+      kubernetes.core.k8s:
+        host: "{{ ocp_api }}"
+        api_key: "{{ ocp_token }}"
+        validate_certs: "{{ ocp_verify_ssl | default(true) }}"
+        state: present
+        definition: "{{ lookup('template', playbook_dir + '/../templates/networkpolicy-deny-all.yaml.j2') | from_yaml }}"
+      tags: [networkpolicy]
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: >-
+          Evidence under {{ evidence_dir }}.
+          Target namespace {{ target_namespace }} (NetworkPolicy only if tag networkpolicy ran).

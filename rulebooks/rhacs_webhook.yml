@@ -1,0 +1,37 @@
+---
+# Event-Driven Ansible rulebook: RHACS generic webhook -> Automation Controller job template.
+# Deploy as a Rulebook Activation in AAP with a Decision Environment that includes ansible.eda.
+#
+# Configure the RHACS integration "Endpoint" to POST to the activation's webhook URL and
+# optional Bearer token that matches `webhook_token` below.
+#
+# Set environment variables on the activation (or inject via rulebook vars) for:
+#   CONTROLLER_URL, CONTROLLER_USERNAME, CONTROLLER_PASSWORD (or token),
+#   JOB_TEMPLATE_ID or JOB_TEMPLATE_NAME
+#   OCP_API, OCP_TOKEN (passed into the job as extra vars)
+#
+- name: RHACS policy violation webhook
+  hosts: all
+
+  sources:
+    - name: rhacs_alerts
+      ansible.eda.webhook:
+        host: 0.0.0.0
+        port: "{{ webhook_port | default(5000) | int }}"
+        token: "{{ webhook_token | default('change-me') }}"
+
+  rules:
+    - name: RHACS alert with policy and deployment context
+      condition: event.payload.alert is defined
+      action:
+        run_job_template:
+          name: "{{ job_template_name | default('RHACS Contain Runtime Violation') }}"
+          organization: "{{ aap_organization | default('Default') }}"
+          job_args:
+            extra_vars:
+              rhacs_webhook_payload: "{{ event.payload }}"
+              ocp_api: "{{ ocp_api }}"
+              ocp_token: "{{ ocp_token }}"
+              ocp_verify_ssl: "{{ ocp_verify_ssl | default(true) }}"
+              skip_checkpoint: "{{ skip_checkpoint | default(false) }}"
+              use_oc_for_node_logs: "{{ use_oc_for_node_logs | default(false) }}"

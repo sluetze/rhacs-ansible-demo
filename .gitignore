@@ -1,0 +1,7 @@
+.env
+.venv/
+*.pem
+*.key
+__pycache__/
+.ansible/
+collections/ansible_collections/

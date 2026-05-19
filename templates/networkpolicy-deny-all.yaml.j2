@@ -1,0 +1,16 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ networkpolicy_name | default('rhacs-ir-deny-all') }}
+  namespace: {{ target_namespace }}
+  labels:
+    app.kubernetes.io/managed-by: rhacs-incident-response
+    rhacs-ir/policy-reason: {{ policy_name | default('rhacs-alert') }}
+spec:
+  podSelector:
+    matchLabels: {{ networkpolicy_match_labels | to_json }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress: []
