@@ -29,8 +29,7 @@
           - event.payload is defined
           - event.payload['alert'] is defined
           - event.payload['alert']['processViolation'] is defined
-          - event.payload['alert']['processViolation']['processes'][0] is defined
-          - event.payload['alert']['processViolation']['processes'][0]['podId'] is defined
+          - event.payload['alert']['processViolation']['processes'] is defined
       action:
         run_job_template:
           name: "{{ job_template_name | default('RHACS Contain Runtime Violation') }}"
