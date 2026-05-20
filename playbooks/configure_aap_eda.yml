@@ -75,6 +75,15 @@
         or (_aap_ee_push_registry_username != _aap_ee_base_registry_username)
         or (_aap_ee_push_registry_password != _aap_ee_base_registry_password)
       }}
+    # Create on Controller + attach to EE when push registry auth is configured
+    _aap_ee_use_registry_credential: >-
+      {{
+        (aap_ee_attach_registry_credential | default(true) | bool)
+        and (aap_ee_registry_credential_name | length > 0)
+        and (_aap_ee_registry_host | length > 0)
+        and (_aap_ee_push_registry_username | length > 0)
+        and (_aap_ee_push_registry_password | length > 0)
+      }}
   environment:
     CONTROLLER_OPTIONAL_API_URLPATTERN_PREFIX: /api/controller/
   module_defaults:
@@ -143,10 +152,11 @@
         that:
           - aap_ee_image_repository is defined
           - aap_ee_image_repository | length > 0
-          - "'your-org' not in aap_ee_image_repository"
+          - aap_ee_image_repository != 'quay.io/your-org/rhacs-ir-ee'
         fail_msg: >-
-          Set aap_ee_image_repository to a registry path you can push to and AAP can pull
-          (for example quay.io/<user>/rhacs-ir-ee). Override in aap-eda-vars.yml.
+          Set aap_ee_image_repository in aap-eda-vars.yml to a registry path you can push to
+          and AAP can pull (for example quay.io/<user>/rhacs-ir-ee). Do not use the
+          documentation placeholder quay.io/your-org/rhacs-ir-ee.
 
     - name: Check ansible-builder is available
       when: aap_build_execution_environment | bool
@@ -255,6 +265,8 @@
       changed_when: _aap_ee_build.rc == 0
 
     - name: Log in to push registry for EE image upload
+      # Independent of aap_ee_attach_registry_credential (Controller pull secret only).
+      # Always runs before push when push credentials are set, even if base registry/host match.
       when:
         - aap_build_execution_environment | bool
         - aap_ee_push_image | bool
@@ -262,7 +274,6 @@
         - _aap_ee_registry_host | length > 0
         - _aap_ee_push_registry_username | length > 0
         - _aap_ee_push_registry_password | length > 0
-        - _aap_ee_registries_differ | bool
       ansible.builtin.shell:
         cmd: >-
           {{ aap_ee_container_cli }} login {{ _aap_ee_registry_host }}
@@ -286,12 +297,7 @@
       tags: [execution_environment, controller]
 
     - name: Create Container Registry credential for execution environment pull
-      when:
-        - aap_configure_ee_registry_credential | bool
-        - aap_ee_registry_credential_name | length > 0
-        - _aap_ee_registry_host | length > 0
-        - _aap_ee_push_registry_username | length > 0
-        - _aap_ee_push_registry_password | length > 0
+      when: _aap_ee_use_registry_credential | bool
       awx.awx.credential:
         name: "{{ aap_ee_registry_credential_name }}"
         description: Registry pull secret for {{ aap_execution_environment_name }} (push registry)
@@ -307,7 +313,7 @@
     - name: Register execution environment on Controller (with registry credential)
       when:
         - aap_configure_execution_environment | bool
-        - aap_ee_registry_credential_name | length > 0
+        - _aap_ee_use_registry_credential | bool
       awx.awx.execution_environment:
         name: "{{ aap_execution_environment_name }}"
         description: >-
@@ -322,7 +328,7 @@
     - name: Register execution environment on Controller (no registry credential)
       when:
         - aap_configure_execution_environment | bool
-        - aap_ee_registry_credential_name | length == 0
+        - not (_aap_ee_use_registry_credential | bool)
       awx.awx.execution_environment:
         name: "{{ aap_execution_environment_name }}"
         description: >-

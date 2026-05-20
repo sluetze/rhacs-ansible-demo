@@ -25,6 +25,8 @@
 # Execution environment (ansible-builder build + push + Controller registration):
 # aap_ee_image_repository: quay.io/your-user/rhacs-ir-ee
 # aap_ee_image_tag: latest
+# aap_build_execution_environment: true
+# aap_configure_execution_environment: true
 # aap_ee_base_image: quay.io/ansible/ansible-execution-env-base:latest
 # Shared login (when base and push use the same registry and account):
 # aap_ee_registry_username: your-user
@@ -40,7 +42,7 @@
 # aap_ee_registry_login: true             # false if you already ran podman login on this host
 # aap_build_execution_environment: true
 # aap_ee_push_image: true
-# aap_configure_ee_registry_credential: true
+# aap_ee_attach_registry_credential: false  # push still uses podman login; only skips AAP pull credential
 # aap_ee_registry_credential_name: RHACS IR EE Registry
 # aap_build_execution_environment: false   # only register image already in registry
 #

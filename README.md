@@ -189,9 +189,13 @@ Red Hat subscribers can point `aap_ee_base_image` at an image such as `registry.
 Optional: register a **Container Registry** credential on Controller so job pods can pull your private EE image:
 
 ```yaml
-aap_configure_ee_registry_credential: true
+aap_ee_attach_registry_credential: true
 aap_ee_registry_credential_name: RHACS IR EE Registry
+aap_ee_push_registry_username: "<quay-user>"
+aap_ee_push_registry_password: "<quay-token>"
 ```
+
+Set `aap_ee_attach_registry_credential: false` to register the EE image without creating a Controller registry credential (public image only).
 
 Manual build after login:
 

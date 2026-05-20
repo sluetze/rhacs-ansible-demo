@@ -16,11 +16,12 @@ aap_job_template_inventory: Demo Inventory
 
 # Execution environment (ansible-builder + Controller registration)
 aap_execution_environment_name: RHACS IR Execution Environment
-aap_configure_execution_environment: true
-aap_build_execution_environment: true
+# Enable after setting aap_ee_image_repository in aap-eda-vars.yml (see example-aap-eda-vars.yml)
+aap_configure_execution_environment: false
+aap_build_execution_environment: false
 aap_ee_push_image: true
-# Override in aap-eda-vars.yml — must be a registry AAP can pull from
-aap_ee_image_repository: quay.io/your-org/rhacs-ir-ee
+# Set in aap-eda-vars.yml — must be a registry AAP can pull from (e.g. quay.io/<user>/rhacs-ir-ee)
+aap_ee_image_repository: ""
 aap_ee_image_tag: latest
 aap_ee_image_pull: missing
 aap_ee_builder_bin: ansible-builder
@@ -45,7 +46,8 @@ aap_ee_push_registry_username: ""
 aap_ee_push_registry_password: ""
 # Controller credential for AAP to pull the pushed EE image (uses push registry auth)
 aap_ee_registry_credential_name: RHACS IR EE Registry
-aap_configure_ee_registry_credential: false
+# Create Controller registry pull secret for the EE (set false to push without an AAP credential)
+aap_ee_attach_registry_credential: true
 # Push destination host; defaults to first segment of aap_ee_image_repository (e.g. quay.io)
 aap_ee_registry_host: ""
 aap_job_template_extra_vars:
