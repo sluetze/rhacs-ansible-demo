@@ -4,6 +4,7 @@
 #
 # Prerequisites:
 #   ansible-galaxy collection install -r collections/requirements.yml -p collections
+#   ansible-builder and podman (or docker) when aap_build_execution_environment is true
 #
 # Example:
 #   ansible-playbook playbooks/configure_aap_eda.yml \
@@ -34,6 +35,8 @@
     # API auth comes from the attached OpenShift credential (host, bearer_token, verify_ssl).
     # Pass ocp_api / ocp_token only when creating that credential, not as job extra_vars.
     _job_template_extra_vars: "{{ aap_job_template_extra_vars }}"
+    _aap_repo_root: "{{ playbook_dir | dirname }}"
+    _aap_ee_image: "{{ aap_ee_image_repository }}:{{ aap_ee_image_tag }}"
   environment:
     CONTROLLER_OPTIONAL_API_URLPATTERN_PREFIX: /api/controller/
   module_defaults:
@@ -94,6 +97,140 @@
           host: "{{ ocp_api }}"
           bearer_token: "{{ ocp_token }}"
           verify_ssl: "{{ ocp_verify_ssl | default(false) | bool }}"
+
+    - name: Require execution environment image repository
+      when: aap_configure_execution_environment | bool or aap_build_execution_environment | bool
+      tags: [execution_environment, controller]
+      ansible.builtin.assert:
+        that:
+          - aap_ee_image_repository is defined
+          - aap_ee_image_repository | length > 0
+          - "'your-org' not in aap_ee_image_repository"
+        fail_msg: >-
+          Set aap_ee_image_repository to a registry path you can push to and AAP can pull
+          (for example quay.io/<user>/rhacs-ir-ee). Override in aap-eda-vars.yml.
+
+    - name: Check ansible-builder is available
+      when: aap_build_execution_environment | bool
+      tags: [execution_environment, controller]
+      ansible.builtin.command:
+        cmd: "{{ aap_ee_builder_bin }} --version"
+      register: _aap_ee_builder_version
+      changed_when: false
+
+    - name: Check container CLI is available
+      when: aap_build_execution_environment | bool
+      tags: [execution_environment, controller]
+      ansible.builtin.command:
+        cmd: "{{ aap_ee_container_cli }} --version"
+      register: _aap_ee_container_cli_version
+      changed_when: false
+
+    - name: Build execution environment image
+      when: aap_build_execution_environment | bool
+      tags: [execution_environment, controller]
+      ansible.builtin.command:
+        argv:
+          - "{{ aap_ee_builder_bin }}"
+          - build
+          - -f
+          - "{{ aap_ee_definition_file }}"
+          - -t
+          - "{{ _aap_ee_image }}"
+          - -c
+          - "{{ aap_ee_container_cli }}"
+        chdir: "{{ _aap_repo_root }}"
+      register: _aap_ee_build
+      changed_when: _aap_ee_build.rc == 0
+
+    - name: Log in to container registry for EE push
+      when:
+        - aap_build_execution_environment | bool
+        - aap_ee_push_image | bool
+        - aap_configure_ee_registry_credential | bool
+        - aap_ee_registry_host | length > 0
+        - aap_ee_registry_username | length > 0
+        - aap_ee_registry_password | length > 0
+      ansible.builtin.command:
+        argv:
+          - "{{ aap_ee_container_cli }}"
+          - login
+          - "{{ aap_ee_registry_host }}"
+          - --username
+          - "{{ aap_ee_registry_username }}"
+          - "--password={{ aap_ee_registry_password }}"
+      changed_when: false
+      no_log: true
+      tags: [execution_environment, controller]
+
+    - name: Push execution environment image to registry
+      when:
+        - aap_build_execution_environment | bool
+        - aap_ee_push_image | bool
+      ansible.builtin.command:
+        argv:
+          - "{{ aap_ee_container_cli }}"
+          - push
+          - "{{ _aap_ee_image }}"
+      register: _aap_ee_push
+      changed_when: _aap_ee_push.rc == 0
+      tags: [execution_environment, controller]
+
+    - name: Create Container Registry credential for execution environment pull
+      when:
+        - aap_configure_ee_registry_credential | bool
+        - aap_ee_registry_credential_name | length > 0
+        - aap_ee_registry_host | length > 0
+        - aap_ee_registry_username | length > 0
+        - aap_ee_registry_password | length > 0
+      awx.awx.credential:
+        name: "{{ aap_ee_registry_credential_name }}"
+        description: Registry pull secret for {{ aap_execution_environment_name }}
+        organization: "{{ aap_organization }}"
+        credential_type: Container Registry
+        inputs:
+          host: "{{ aap_ee_registry_host }}"
+          username: "{{ aap_ee_registry_username }}"
+          password: "{{ aap_ee_registry_password }}"
+      no_log: true
+      tags: [execution_environment, controller]
+
+    - name: Register execution environment on Controller (with registry credential)
+      when:
+        - aap_configure_execution_environment | bool
+        - aap_ee_registry_credential_name | length > 0
+      awx.awx.execution_environment:
+        name: "{{ aap_execution_environment_name }}"
+        description: >-
+          RHACS incident response — collections from collections/requirements.yml
+          (community.general, kubernetes.core, awx.awx, ansible.eda).
+        organization: "{{ aap_organization }}"
+        image: "{{ _aap_ee_image }}"
+        pull: "{{ aap_ee_image_pull }}"
+        credential: "{{ aap_ee_registry_credential_name }}"
+      tags: [execution_environment, controller]
+
+    - name: Register execution environment on Controller (no registry credential)
+      when:
+        - aap_configure_execution_environment | bool
+        - aap_ee_registry_credential_name | length == 0
+      awx.awx.execution_environment:
+        name: "{{ aap_execution_environment_name }}"
+        description: >-
+          RHACS incident response — collections from collections/requirements.yml
+          (community.general, kubernetes.core, awx.awx, ansible.eda).
+        organization: "{{ aap_organization }}"
+        image: "{{ _aap_ee_image }}"
+        pull: "{{ aap_ee_image_pull }}"
+      tags: [execution_environment, controller]
+
+    - name: Show execution environment image
+      when: aap_configure_execution_environment | bool
+      ansible.builtin.debug:
+        msg: >-
+          Job template {{ aap_job_template_name }} uses execution environment
+          {{ aap_execution_environment_name }} (image {{ _aap_ee_image }}).
+      tags: [execution_environment, controller]
 
     - name: Create incident response job template
       awx.awx.job_template:

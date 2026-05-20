@@ -6,5 +6,7 @@ extra-vars.yml
 *.key
 __pycache__/
 .ansible/
+context/
+_build/
 collections/ansible_collections/
 debug.log

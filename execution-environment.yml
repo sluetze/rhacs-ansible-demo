@@ -1,0 +1,17 @@
+---
+# Ansible Builder v3 — RHACS incident-response Controller execution environment.
+# Build: ansible-builder build -f execution-environment.yml -t <repository>:<tag>
+version: 3
+
+images:
+  base_image:
+    name: quay.io/ansible/ansible-execution-env-base:latest
+
+dependencies:
+  ansible_core:
+    package_pip: ansible-core>=2.15
+  ansible_runner:
+    package_pip: ansible-runner
+  galaxy: collections/requirements.yml
+  python: requirements.txt
+  system: bindep.txt

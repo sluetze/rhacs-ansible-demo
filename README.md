@@ -16,6 +16,7 @@ Target **OpenShift Container Platform 4.19+** (no cluster `FeatureGate` steps fo
 | [vars/aap_eda_defaults.yml](vars/aap_eda_defaults.yml) | Default names/images for `configure_aap_eda.yml` |
 | [example-aap-eda-vars.yml](example-aap-eda-vars.yml) | Example extra vars for AAP/EDA bootstrap (copy, do not commit) |
 | [collections/requirements.yml](collections/requirements.yml) | `community.general`, `kubernetes.core`, `awx.awx`, `ansible.eda` |
+| [execution-environment.yml](execution-environment.yml) | Ansible Builder definition for the Controller execution environment |
 
 ## 1. Apply OpenShift RBAC
 
@@ -143,6 +144,36 @@ ansible-playbook playbooks/configure_aap_eda.yml \
 ```
 
 Use tags to run only one side: `--tags controller` or `--tags eda`. Defaults live in [vars/aap_eda_defaults.yml](vars/aap_eda_defaults.yml); set `eda_use_event_stream: false` to use the rulebook’s embedded webhook instead of an EDA event stream (matches [event.json](event.json) when RHACS posts to `RHACS-OCP-Forensics`).
+
+### Execution environment build and upload
+
+`configure_aap_eda.yml` can **build**, **push**, and **register** a Controller execution environment that installs every collection in [collections/requirements.yml](collections/requirements.yml) plus Python deps from [requirements.txt](requirements.txt).
+
+On the machine running the bootstrap playbook, install **ansible-builder** and **podman** (or set `aap_ee_container_cli: docker`). In `aap-eda-vars.yml` set a real registry path:
+
+```yaml
+aap_ee_image_repository: quay.io/<your-user>/rhacs-ir-ee
+aap_ee_image_tag: latest
+```
+
+Optional registry auth for push and for AAP to pull private images:
+
+```yaml
+aap_configure_ee_registry_credential: true
+aap_ee_registry_credential_name: RHACS IR EE Registry
+aap_ee_registry_host: quay.io
+aap_ee_registry_username: <user>
+aap_ee_registry_password: "<token>"
+```
+
+Manual build (same definition):
+
+```bash
+ansible-builder build -f execution-environment.yml -t quay.io/<you>/rhacs-ir-ee:latest
+podman push quay.io/<you>/rhacs-ir-ee:latest
+```
+
+Skip image build and only register an existing image: `-e aap_build_execution_environment=false` (still set `aap_ee_image_repository` / tag). EE-only tasks: `--tags execution_environment`.
 
 ### Option B — Manual UI
 

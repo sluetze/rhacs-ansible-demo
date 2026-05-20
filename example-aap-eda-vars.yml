@@ -22,6 +22,18 @@
 # ocp_api: "https://api.cluster.example.com:6443"
 # ocp_token: "<rhacs-ir-runner-token>"
 #
+# Execution environment (ansible-builder build + push + Controller registration):
+# aap_ee_image_repository: quay.io/your-user/rhacs-ir-ee
+# aap_ee_image_tag: latest
+# aap_build_execution_environment: true
+# aap_ee_push_image: true
+# aap_configure_ee_registry_credential: true
+# aap_ee_registry_credential_name: RHACS IR EE Registry
+# aap_ee_registry_host: quay.io
+# aap_ee_registry_username: your-user
+# aap_ee_registry_password: "change-me"
+# aap_build_execution_environment: false   # only register image already in registry
+#
 # Username/password overrides from vars/aap_eda_defaults.yml (RHACS → EDA event stream basic auth):
 # eda_event_stream_username: rhacs-webhook
 # eda_event_stream_password: "change-me"
