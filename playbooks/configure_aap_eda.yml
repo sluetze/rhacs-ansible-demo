@@ -1,0 +1,309 @@
+---
+# Bootstrap Ansible Automation Platform (Controller) and Event-Driven Ansible resources
+# for the RHACS incident-response demo.
+#
+# Prerequisites:
+#   ansible-galaxy collection install -r collections/requirements.yml -p collections
+#
+# Example:
+#   ansible-playbook playbooks/configure_aap_eda.yml \
+#     -e @example-aap-eda-vars.yml \
+#     -e aap_gateway_host="$AAP_ENDPOINT" \
+#     -e aap_oauth_token="$AAP_TOKEN" \
+#     -e aap_project_scm_url="https://github.com/you/rhacs-ansible-demo.git" \
+#     -e ocp_api="$OCP_API" -e ocp_token="$OCP_TOKEN"
+#
+- name: Configure Automation Controller (AAP)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../vars/aap_eda_defaults.yml
+  vars:
+    # awx.awx modules expect the platform base URL (no /api/controller). The collection
+    # adds the API prefix via CONTROLLER_OPTIONAL_API_URLPATTERN_PREFIX on AAP gateway installs.
+    _controller_host_raw: >-
+      {{
+        aap_controller_host
+        | default(aap_gateway_host, true)
+        | default(lookup('env', 'CONTROLLER_HOST'), true)
+        | default(lookup('env', 'AAP_ENDPOINT'), true)
+      }}
+    _controller_host: "{{ _controller_host_raw | regex_replace('/api/controller/?$', '') | regex_replace('/$', '') }}"
+    _controller_api_url: "{{ _controller_host ~ '/api/controller/' }}"
+    # API auth comes from the attached OpenShift credential (host, bearer_token, verify_ssl).
+    # Pass ocp_api / ocp_token only when creating that credential, not as job extra_vars.
+    _job_template_extra_vars: "{{ aap_job_template_extra_vars }}"
+  environment:
+    CONTROLLER_OPTIONAL_API_URLPATTERN_PREFIX: /api/controller/
+  module_defaults:
+    group/awx.awx.controller:
+      controller_host: "{{ _controller_host }}"
+      controller_oauthtoken: "{{ aap_oauth_token | default(omit) }}"
+      controller_username: "{{ aap_controller_username | default(lookup('env', 'CONTROLLER_USERNAME'), true) | default(omit) }}"
+      controller_password: "{{ aap_controller_password | default(lookup('env', 'CONTROLLER_PASSWORD'), true) | default(omit) }}"
+      validate_certs: "{{ aap_controller_validate_certs | default(true) | bool }}"
+  tags:
+    - controller
+  tasks:
+    - name: Require Controller connection settings
+      ansible.builtin.assert:
+        that:
+          - _controller_host is defined
+          - _controller_host | length > 0
+          - >-
+            (aap_oauth_token is defined and (aap_oauth_token | string | length) > 0)
+            or (
+              (aap_controller_username | default(lookup('env', 'CONTROLLER_USERNAME'), true) | length) > 0
+              and (aap_controller_password | default(lookup('env', 'CONTROLLER_PASSWORD'), true) | length) > 0
+            )
+        fail_msg: >-
+          Set aap_gateway_host + aap_oauth_token, or aap_controller_host with username/password
+          (or CONTROLLER_HOST / CONTROLLER_USERNAME / CONTROLLER_PASSWORD).
+
+    - name: Create Controller project
+      awx.awx.project:
+        name: "{{ aap_project_name }}"
+        description: RHACS incident response demo content
+        organization: "{{ aap_organization }}"
+        scm_type: git
+        scm_url: "{{ aap_project_scm_url }}"
+        scm_branch: "{{ aap_project_scm_branch }}"
+        scm_update_on_launch: "{{ aap_project_scm_update_on_launch | bool }}"
+        update_project: true
+        wait: true
+      register: aap_project
+
+    - name: Require ocp_api and ocp_token when configuring OCP credential
+      when: aap_configure_ocp_credential | bool
+      ansible.builtin.assert:
+        that:
+          - ocp_api is defined and ocp_api | length > 0
+          - ocp_token is defined and ocp_token | length > 0
+        fail_msg: >-
+          Define ocp_api and ocp_token (or set aap_configure_ocp_credential: false).
+
+    - name: Create OpenShift API credential for job template
+      when: aap_configure_ocp_credential | bool
+      awx.awx.credential:
+        name: "{{ aap_ocp_credential_name }}"
+        description: Bearer token for rhacs-ir-runner (or equivalent)
+        organization: "{{ aap_organization }}"
+        credential_type: "{{ aap_ocp_credential_type }}"
+        inputs:
+          host: "{{ ocp_api }}"
+          bearer_token: "{{ ocp_token }}"
+          verify_ssl: "{{ ocp_verify_ssl | default(false) | bool }}"
+
+    - name: Create incident response job template
+      awx.awx.job_template:
+        name: "{{ aap_job_template_name }}"
+        description: RHACS runtime violation — logs, checkpoint, NetworkPolicy
+        organization: "{{ aap_organization }}"
+        project: "{{ aap_project_name }}"
+        playbook: "{{ aap_job_template_playbook }}"
+        inventory: "{{ aap_job_template_inventory }}"
+        execution_environment: "{{ aap_execution_environment_name }}"
+        extra_vars: "{{ _job_template_extra_vars }}"
+        job_type: run
+
+    - name: Attach OpenShift credential to job template
+      when: aap_configure_ocp_credential | bool
+      awx.awx.job_template:
+        name: "{{ aap_job_template_name }}"
+        organization: "{{ aap_organization }}"
+        credentials:
+          - "{{ aap_ocp_credential_name }}"
+
+- name: Configure Event-Driven Ansible (EDA)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../vars/aap_eda_defaults.yml
+  vars:
+    # ansible.eda modules expect the platform base URL (no /api/eda); the client adds /api/eda/v1.
+    _eda_host_raw: >-
+      {{
+        eda_controller_host
+        | default(aap_gateway_host, true)
+        | default(aap_controller_host, true)
+        | default(lookup('env', 'EDA_HOST'), true)
+        | default(lookup('env', 'AAP_ENDPOINT'), true)
+      }}
+    _eda_host: "{{ _eda_host_raw | regex_replace('/api/eda/?$', '') | regex_replace('/api/controller/?$', '') | regex_replace('/$', '') }}"
+    _controller_api_url: "{{ _eda_host ~ '/api/controller/' }}"
+    # Job template uses the Controller OpenShift credential; EDA activation does not need API tokens.
+    _eda_activation_extra_vars: "{{ eda_rulebook_activation_extra_vars }}"
+  module_defaults:
+    group/ansible.eda.eda:
+      controller_host: "{{ _eda_host }}"
+      controller_token: "{{ eda_oauth_token | default(aap_oauth_token, true) | default(omit) }}"
+      controller_username: "{{ eda_username | default(aap_controller_username, true) | default(lookup('env', 'CONTROLLER_USERNAME'), true) | default(omit) }}"
+      controller_password: "{{ eda_password | default(aap_controller_password, true) | default(lookup('env', 'CONTROLLER_PASSWORD'), true) | default(omit) }}"
+      validate_certs: "{{ eda_validate_certs | default(aap_controller_validate_certs | default(true)) | bool }}"
+  tags:
+    - eda
+  tasks:
+    - name: Require EDA connection settings
+      ansible.builtin.assert:
+        that:
+          - _eda_host is defined
+          - _eda_host | length > 0
+        fail_msg: Set eda_controller_host, aap_gateway_host, or AAP_ENDPOINT / EDA_HOST.
+
+    - name: Create EDA decision environment
+      ansible.eda.decision_environment:
+        name: "{{ eda_decision_environment_name }}"
+        description: ansible-rulebook + ansible.eda for RHACS webhook rulebook
+        image_url: "{{ eda_decision_environment_image }}"
+        organization_name: "{{ eda_organization }}"
+
+    - name: Create or update EDA project
+      ansible.eda.project:
+        name: "{{ eda_project_name }}"
+        description: RHACS EDA rulebooks and playbooks
+        url: "{{ aap_project_scm_url }}"
+        scm_branch: "{{ aap_project_scm_branch }}"
+        organization_name: "{{ eda_organization }}"
+        wait: true
+
+    - name: Sync EDA project and wait for rulebooks
+      ansible.eda.project:
+        name: "{{ eda_project_name }}"
+        organization_name: "{{ eda_organization }}"
+        sync: true
+        wait: true
+      register: eda_project_sync
+      retries: 20
+      delay: 15
+      until: eda_project_sync is not failed
+
+    - name: Create EDA credential for Automation Controller
+      ansible.eda.credential:
+        name: "{{ eda_aap_credential_name }}"
+        description: Lets rulebook activations launch job templates on Controller
+        credential_type_name: "{{ eda_aap_credential_type }}"
+        organization_name: "{{ eda_organization }}"
+        inputs: >-
+          {{
+            eda_aap_credential_inputs | default({
+              'host': _controller_api_url,
+              'username': aap_controller_username | default(lookup('env', 'CONTROLLER_USERNAME'), true),
+              'password': aap_controller_password | default(lookup('env', 'CONTROLLER_PASSWORD'), true),
+            }, true)
+          }}
+
+    - name: Require event stream username and password
+      when: eda_use_event_stream | bool
+      ansible.builtin.assert:
+        that:
+          - >-
+            (eda_event_stream_username | default(aap_controller_username, true) | length) > 0
+          - >-
+            (eda_event_stream_password | default(aap_controller_password, true) | length) > 0
+        fail_msg: >-
+          Define eda_event_stream_username and eda_event_stream_password, or reuse
+          aap_controller_username and aap_controller_password.
+
+    - name: Create Basic Event Stream credential for RHACS webhook auth
+      when: eda_use_event_stream | bool
+      ansible.eda.credential:
+        name: "{{ eda_event_stream_credential_name }}"
+        description: HTTP basic auth for RHACS generic webhook → EDA event stream
+        credential_type_name: "{{ eda_event_stream_credential_type }}"
+        organization_name: "{{ eda_organization }}"
+        inputs:
+          username: "{{ eda_event_stream_username | default(aap_controller_username, true) }}"
+          password: "{{ eda_event_stream_password | default(aap_controller_password, true) }}"
+
+    - name: List rulebooks in EDA project
+      ansible.eda.rulebook_info:
+        project_name: "{{ eda_project_name }}"
+      register: eda_rulebooks
+
+    - name: Resolve rulebook name from project sync
+      ansible.builtin.set_fact:
+        eda_rulebook_name_resolved: >-
+          {{
+            (eda_rulebooks.rulebooks | selectattr('name', 'search', 'rhacs_webhook')
+             | map(attribute='name') | list | first)
+            | default(eda_rulebook_name)
+          }}
+
+    - name: Fail when RHACS rulebook is missing from EDA project
+      ansible.builtin.assert:
+        that:
+          - eda_rulebooks.rulebooks | selectattr('name', 'equalto', eda_rulebook_name_resolved) | list | length > 0
+        fail_msg: >-
+          No rulebook matching {{ eda_rulebook_name }} in project {{ eda_project_name }}.
+          Rulebooks found: {{ eda_rulebooks.rulebooks | map(attribute='name') | list }}.
+
+    - name: Load sample RHACS event for rulebook validation
+      ansible.builtin.set_fact:
+        _rhacs_sample_event: "{{ lookup('file', playbook_dir ~ '/../event.json') | from_json }}"
+
+    - name: Validate sample event matches rulebook payload shape
+      ansible.builtin.assert:
+        that:
+          - _rhacs_sample_event.payload is defined
+          - _rhacs_sample_event.payload.alert is defined
+          - _rhacs_sample_event.payload.alert.namespace is defined
+          - _rhacs_sample_event.payload.alert.processViolation is defined
+          - _rhacs_sample_event.payload.alert.processViolation.processes | length > 0
+          - _rhacs_sample_event.payload.alert.processViolation.processes[0].podId is defined
+        fail_msg: >-
+          event.json must expose payload.alert with processViolation.processes[0].podId
+          (runtime alerts). The rulebook uses bracket notation on event.payload['alert'].
+
+    - name: Create RHACS event stream
+      when: eda_use_event_stream | bool
+      ansible.eda.event_stream:
+        name: "{{ eda_event_stream_name }}"
+        organization_name: "{{ eda_organization }}"
+        credential_name: "{{ eda_event_stream_credential_name }}"
+        forward_events: true
+      register: eda_event_stream_result
+
+    - name: Show RHACS webhook URL for event stream
+      when:
+        - eda_use_event_stream | bool
+        - eda_event_stream_result is changed or eda_event_stream_result.id is defined
+      ansible.builtin.debug:
+        msg: >-
+          Configure RHACS Generic webhook to POST to your EDA event stream endpoint
+          (Automation Decisions → Event Streams → {{ eda_event_stream_name }}).
+          Use HTTP basic auth (username/password) matching credential {{ eda_event_stream_credential_name }}.
+
+    - name: Create rulebook activation (RHACS event stream)
+      when: eda_use_event_stream | bool
+      ansible.eda.rulebook_activation:
+        name: "{{ eda_rulebook_activation_name }}"
+        description: RHACS policy violations → {{ aap_job_template_name }}
+        organization_name: "{{ eda_organization }}"
+        project_name: "{{ eda_project_name }}"
+        rulebook_name: "{{ eda_rulebook_name_resolved }}"
+        decision_environment_name: "{{ eda_decision_environment_name }}"
+        eda_credentials:
+          - "{{ eda_aap_credential_name }}"
+        extra_vars: "{{ _eda_activation_extra_vars | to_json }}"
+        event_streams:
+          - event_stream: "{{ eda_event_stream_name }}"
+            source_name: "{{ eda_rulebook_source_name }}"
+        state: enabled
+        restart_on_project_update: true
+
+    - name: Create rulebook activation (embedded webhook)
+      when: not (eda_use_event_stream | bool)
+      ansible.eda.rulebook_activation:
+        name: "{{ eda_rulebook_activation_name }}"
+        description: RHACS policy violations → {{ aap_job_template_name }}
+        organization_name: "{{ eda_organization }}"
+        project_name: "{{ eda_project_name }}"
+        rulebook_name: "{{ eda_rulebook_name_resolved }}"
+        decision_environment_name: "{{ eda_decision_environment_name }}"
+        eda_credentials:
+          - "{{ eda_aap_credential_name }}"
+        extra_vars: "{{ _eda_activation_extra_vars | to_json }}"
+        state: enabled
+        restart_on_project_update: true

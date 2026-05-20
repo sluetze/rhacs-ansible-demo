@@ -1,0 +1,53 @@
+---
+# Defaults for playbooks/configure_aap_eda.yml — override via -e @example-aap-eda-vars.yml
+
+aap_organization: Default
+
+# Git project (Controller + EDA)
+aap_project_name: RHACS Ansible Demo
+aap_project_scm_url: "https://github.com/your-org/rhacs-ansible-demo.git"
+aap_project_scm_branch: main
+aap_project_scm_update_on_launch: true
+
+# Automation Controller job
+aap_job_template_name: RHACS Contain Runtime Violation
+aap_job_template_playbook: playbooks/contain_runtime_violation.yml
+aap_job_template_inventory: Demo Inventory
+aap_execution_environment_name: Default execution environment
+aap_job_template_extra_vars:
+  skip_checkpoint: true
+  use_oc_for_node_logs: false
+
+# OpenShift API credential on Controller (injects host, bearer_token, verify_ssl into job runs)
+aap_configure_ocp_credential: true
+aap_ocp_credential_name: RHACS IR OpenShift
+aap_ocp_credential_type: "OpenShift or Kubernetes API Bearer Token"
+
+# EDA
+eda_organization: Default
+eda_project_name: "{{ aap_project_name }}"
+eda_decision_environment_name: RHACS Rulebook DE
+eda_decision_environment_image: quay.io/ansible/ansible-rulebook:latest
+eda_rulebook_activation_name: RHACS Webhook
+eda_rulebook_name: rhacs_webhook.yml
+eda_rulebook_source_name: rhacs_alerts
+
+# RHACS posts to an EDA event stream (see event.json); set false to use embedded webhook only
+eda_use_event_stream: true
+eda_event_stream_name: RHACS-OCP-Forensics
+eda_event_stream_credential_name: RHACS Event Stream
+eda_event_stream_credential_type: Basic Event Stream
+# Defaults fall back to aap_controller_username / aap_controller_password when unset
+eda_event_stream_username: rhacs-webhook
+eda_event_stream_password: change-me
+
+eda_rulebook_activation_extra_vars:
+  job_template_name: "{{ aap_job_template_name }}"
+  aap_organization: "{{ aap_organization }}"
+  webhook_token: change-me
+  webhook_port: 5000
+  skip_checkpoint: true
+  use_oc_for_node_logs: false
+
+eda_aap_credential_name: RHACS EDA to Controller
+eda_aap_credential_type: "Red Hat Ansible Automation Platform"

@@ -9,7 +9,7 @@
 #   - target_container (defaults to first container in pod)
 #   - networkpolicy_name, policy_name
 #   - evidence_dir (default: ~/rhacs-ir-evidence/<timestamp> on controller)
-#   - ocp_api, ocp_token, ocp_verify_ssl (or kubeconfig via K8s auth preference)
+#   - host, bearer_token, verify_ssl (from Controller OpenShift/K8s credential; legacy ocp_* aliases)
 #   - skip_checkpoint: true to skip kubelet checkpoint call
 #   - use_oc_for_node_logs: true uses oc adm node-logs (default false for AAP without oc CLI)
 #
@@ -25,14 +25,33 @@
     rhacs_webhook_payload: "{{ ansible_eda.event }}"
 
   pre_tasks:
+    - name: Resolve OpenShift API auth from Controller credential or extra vars
+      ansible.builtin.set_fact:
+        host: >-
+          {{
+            host | default(lookup('env', 'K8S_AUTH_HOST'), true)
+            | default(ocp_api, true)
+          }}
+        bearer_token: >-
+          {{
+            bearer_token | default(lookup('env', 'K8S_AUTH_API_KEY'), true)
+            | default(ocp_token, true)
+          }}
+        verify_ssl: >-
+          {{
+            (verify_ssl | default(lookup('env', 'K8S_AUTH_VERIFY_SSL'), true)
+             | default(ocp_verify_ssl | default(false)))
+            | bool
+          }}
+
     - name: Require OpenShift API URL and bearer token
       ansible.builtin.assert:
         that:
-          - ocp_api is defined and ocp_api | length > 0
-          - ocp_token is defined and ocp_token | length > 0
+          - host is defined and host | length > 0
+          - bearer_token is defined and bearer_token | length > 0
         fail_msg: >-
-          Define ocp_api (e.g. https://api.cluster:6443) and ocp_token (ServiceAccount bearer
-          from rhacs-ir-runner-token secret).
+          Attach an OpenShift or Kubernetes API Bearer Token credential to the job template
+          (host, bearer_token, verify_ssl), or pass -e host=... -e bearer_token=... for ad-hoc runs.
 
     - name: Print full event
       ansible.builtin.debug:
@@ -87,9 +106,9 @@
   tasks:
     - name: Look up pod
       kubernetes.core.k8s_info:
-        host: "{{ ocp_api }}"
-        api_key: "{{ ocp_token }}"
-        validate_certs: "{{ ocp_verify_ssl | default(true) }}"
+        host: "{{ host }}"
+        api_key: "{{ bearer_token }}"
+        validate_certs: "{{ verify_ssl }}"
         kind: Pod
         namespace: "{{ target_namespace }}"
         name: "{{ target_pod }}"
@@ -135,9 +154,9 @@
 
     - name: Fetch container logs (current)
       kubernetes.core.k8s_log:
-        host: "{{ ocp_api }}"
-        api_key: "{{ ocp_token }}"
-        validate_certs: "{{ ocp_verify_ssl | default(true) }}"
+        host: "{{ host }}"
+        api_key: "{{ bearer_token }}"
+        validate_certs: "{{ verify_ssl }}"
         namespace: "{{ target_namespace }}"
         name: "{{ target_pod }}"
         container: "{{ target_container }}"
@@ -152,9 +171,9 @@
 
     - name: Try previous-instance container logs
       kubernetes.core.k8s_log:
-        host: "{{ ocp_api }}"
-        api_key: "{{ ocp_token }}"
-        validate_certs: "{{ ocp_verify_ssl | default(true) }}"
+        host: "{{ host }}"
+        api_key: "{{ bearer_token }}"
+        validate_certs: "{{ verify_ssl }}"
         namespace: "{{ target_namespace }}"
         name: "{{ target_pod }}"
         container: "{{ target_container }}"
@@ -173,32 +192,32 @@
 
     - name: Capture kubelet unit logs from node (oc)
       ansible.builtin.command:
-        argv:
-          - oc
-          - adm
-          - node-logs
-          - "{{ target_node }}"
-          - -u
-          - kubelet
-          - "--tail={{ node_log_tail | default(5000) | int }}"
+        argv: >-
+          {{
+            ['oc', '--server=' ~ host, '--token=' ~ bearer_token]
+            + (['--insecure-skip-tls-verify=true'] if not verify_ssl else [])
+            + ['adm', 'node-logs', target_node, '-u', 'kubelet',
+               '--tail=' ~ (node_log_tail | default(5000) | string)]
+          }}
       register: node_logs_kubelet
       changed_when: false
       when: use_oc_for_node_logs | default(false) | bool
+      no_log: true
       tags: [logs]
 
     - name: Capture crio unit logs from node (oc)
       ansible.builtin.command:
-        argv:
-          - oc
-          - adm
-          - node-logs
-          - "{{ target_node }}"
-          - -u
-          - crio
-          - "--tail={{ node_log_tail | default(5000) | int }}"
+        argv: >-
+          {{
+            ['oc', '--server=' ~ host, '--token=' ~ bearer_token]
+            + (['--insecure-skip-tls-verify=true'] if not verify_ssl else [])
+            + ['adm', 'node-logs', target_node, '-u', 'crio',
+               '--tail=' ~ (node_log_tail | default(5000) | string)]
+          }}
       register: node_logs_crio
       changed_when: false
       when: use_oc_for_node_logs | default(false) | bool
+      no_log: true
       tags: [logs]
 
     - name: Write kubelet node logs
@@ -221,14 +240,14 @@
       when: not (skip_checkpoint | default(false) | bool)
       ansible.builtin.uri:
         url: >-
-          {{ ocp_api }}/api/v1/nodes/{{ target_node }}/proxy/checkpoint/{{
+          {{ host }}/api/v1/nodes/{{ target_node }}/proxy/checkpoint/{{
           target_namespace | urlencode }}/{{ target_pod | urlencode }}/{{
           target_container | urlencode }}
         method: POST
         body_format: json
         headers:
-          Authorization: "Bearer {{ ocp_token }}"
-        validate_certs: "{{ ocp_verify_ssl | default(true) }}"
+          Authorization: "Bearer {{ bearer_token }}"
+        validate_certs: "{{ verify_ssl }}"
         status_code: [200, 201, 202]
         timeout: 300
       register: checkpoint_response
@@ -256,9 +275,9 @@
 
     - name: Apply deny-all NetworkPolicy for matched pod labels
       kubernetes.core.k8s:
-        host: "{{ ocp_api }}"
-        api_key: "{{ ocp_token }}"
-        validate_certs: "{{ ocp_verify_ssl | default(true) }}"
+        host: "{{ host }}"
+        api_key: "{{ bearer_token }}"
+        validate_certs: "{{ verify_ssl }}"
         state: present
         definition: "{{ lookup('template', playbook_dir + '/../templates/networkpolicy-deny-all.yaml.j2') | from_yaml }}"
       tags: [networkpolicy]

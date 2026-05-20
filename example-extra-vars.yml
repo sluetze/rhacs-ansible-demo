@@ -2,9 +2,9 @@
 # Copy to extra-vars.yml (do not commit) and fill in OCP API + SA token.
 # Example: ansible-playbook playbooks/contain_runtime_violation.yml -e @extra-vars.yml
 #
-# ocp_api: "https://api.ocp.example.com:6443"
-# ocp_token: "<token from: oc get secret rhacs-ir-runner-token -n rhacs-incident-response -o jsonpath='{.data.token}' | base64 -d"
-# ocp_verify_ssl: true
+# host: "https://api.ocp.example.com:6443"
+# bearer_token: "<token from: oc get secret rhacs-ir-runner-token -n rhacs-incident-response -o jsonpath='{.data.token}' | base64 -d>"
+# verify_ssl: true
 #
 # target_namespace: "demo-app"
 # target_pod: "malicious-pod-xxxxx"

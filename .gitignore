@@ -1,4 +1,6 @@
 .env
+aap-eda-vars.yml
+extra-vars.yml
 .venv/
 *.pem
 *.key

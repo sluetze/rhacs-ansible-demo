@@ -40,9 +40,6 @@
               target_namespace: "{{ event.payload['alert']['namespace'] }}"
               target_pod: "{{ (event.payload['alert']['processViolation']['processes'] | first)['podId'] }}"
               target_cluster: "{{ event.payload['alert']['clusterName'] }}"
-              # these should come from the inventory
-              # ocp_api: "{{ ocp_api }}"
-              # ocp_token: "{{ ocp_token }}"
-              # ocp_verify_ssl: "{{ ocp_verify_ssl | default(true) }}"
+              # OpenShift API auth is supplied by the job template credential (host, bearer_token, verify_ssl)
               skip_checkpoint: "{{ skip_checkpoint | default(false) }}"
               use_oc_for_node_logs: "{{ use_oc_for_node_logs | default(false) }}"
