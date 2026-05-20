@@ -21,8 +21,15 @@
         token: "{{ webhook_token | default('change-me') }}"
 
   rules:
-    - name: RHACS alert with policy and deployment context
-      condition: event.payload.alert is defined
+    - name: RHACS runtime process violation
+      # Event stream (pg_listener) wraps RHACS body in payload; use bracket notation so
+      # ansible-rulebook does not treat keys like "deployment" as standalone Jinja vars.
+      condition: >-
+        event.payload is defined
+        and event.payload['alert'] is defined
+        and event.payload['alert']['processViolation'] is defined
+        and (event.payload['alert']['processViolation']['processes'] | length) > 0
+        and (event.payload['alert']['processViolation']['processes'] | first)['podId'] is defined
       action:
         run_job_template:
           name: "{{ job_template_name | default('RHACS Contain Runtime Violation') }}"
@@ -30,9 +37,9 @@
           job_args:
             extra_vars:
               rhacs_webhook_payload: "{{ event.payload }}"
-              target_namespace: "{{ event.payload.alert.namespace }}"
-              target_pod: "{{ event.payload.alert.deployment.name }}"
-              target_cluster: "{{ event.payload.alert.clusterName }}"
+              target_namespace: "{{ event.payload['alert']['namespace'] }}"
+              target_pod: "{{ (event.payload['alert']['processViolation']['processes'] | first)['podId'] }}"
+              target_cluster: "{{ event.payload['alert']['clusterName'] }}"
               # these should come from the inventory
               # ocp_api: "{{ ocp_api }}"
               # ocp_token: "{{ ocp_token }}"
