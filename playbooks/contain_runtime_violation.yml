@@ -22,6 +22,7 @@
     ansible_python_interpreter: >-
       {{ (lookup('env', 'VIRTUAL_ENV') ~ '/bin/python') if (lookup('env', 'VIRTUAL_ENV', default='') | length > 0)
          else lookup('env', 'RHACS_ANSIBLE_PYTHON', default='/usr/bin/python3') }}
+    rhacs_webhook_payload: "{{ ansible_eda.event }}"
 
   pre_tasks:
     - name: Require OpenShift API URL and bearer token
@@ -32,6 +33,12 @@
         fail_msg: >-
           Define ocp_api (e.g. https://api.cluster:6443) and ocp_token (ServiceAccount bearer
           from rhacs-ir-runner-token secret).
+
+    - name: Print full event
+      ansible.builtin.debug:
+        var: ansible_eda.event
+      when:
+        - ansible_eda.event is defined
 
     - name: Print full event
       ansible.builtin.debug:
