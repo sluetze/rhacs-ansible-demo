@@ -1,0 +1,9 @@
+---
+- name: Handle EDA Event
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Print the entire event payload for debugging
+      ansible.builtin.debug:
+        var: ansible_eda.event

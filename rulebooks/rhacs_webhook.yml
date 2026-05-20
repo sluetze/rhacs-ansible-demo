@@ -38,3 +38,9 @@
               # OpenShift API auth is supplied by the job template credential (host, bearer_token, verify_ssl)
               skip_checkpoint: "{{ skip_checkpoint | default(false) }}"
               use_oc_for_node_logs: "{{ use_oc_for_node_logs | default(false) }}"
+    - name: Debug the event payload
+      condition: event.payload is defined
+      action:
+        run_job_template:
+          name: test_eda
+          organization: Default
