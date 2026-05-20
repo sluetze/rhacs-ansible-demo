@@ -22,9 +22,16 @@
     ansible_python_interpreter: >-
       {{ (lookup('env', 'VIRTUAL_ENV') ~ '/bin/python') if (lookup('env', 'VIRTUAL_ENV', default='') | length > 0)
          else lookup('env', 'RHACS_ANSIBLE_PYTHON', default='/usr/bin/python3') }}
-    rhacs_webhook_payload: "{{ ansible_eda.event }}"
 
   pre_tasks:
+    - name: Set rhacs_webhook_payload from ansible_eda when running directly from EDA
+      ansible.builtin.set_fact:
+        rhacs_webhook_payload: "{{ ansible_eda.event }}"
+      when:
+        - ansible_eda is defined
+        - ansible_eda.event is defined
+        - rhacs_webhook_payload is not defined or (rhacs_webhook_payload | default('') | length == 0)
+
     - name: Resolve OpenShift API auth from Controller credential or extra vars
       ansible.builtin.set_fact:
         host: >-
@@ -70,22 +77,20 @@
         target_namespace: "{{ rhacs_webhook_payload.alert.deployment.namespace }}"
       when:
         - rhacs_webhook_payload is defined
-        - target_namespace is not defined
+        - (target_namespace is not defined) or (target_namespace | default('') | length == 0)
         - rhacs_webhook_payload.alert.deployment is defined
         - rhacs_webhook_payload.alert.deployment.namespace is defined
 
     - name: Derive target_pod from RHACS webhook when unset
       ansible.builtin.set_fact:
-        target_pod: >-
-          {{
-            (rhacs_webhook_payload.alert.pod if rhacs_webhook_payload.alert.pod is string
-             else rhacs_webhook_payload.alert.pod.name)
-          }}
+        target_pod: "{{ rhacs_webhook_payload.alert.processViolation.processes[0].podId }}"
       when:
         - rhacs_webhook_payload is defined
-        - target_pod is not defined
-        - rhacs_webhook_payload.alert is defined
-        - rhacs_webhook_payload.alert.pod is defined
+        - (target_pod is not defined) or (target_pod | default('') | length == 0)
+        - rhacs_webhook_payload.alert.processViolation is defined
+        - rhacs_webhook_payload.alert.processViolation.processes is defined
+        - rhacs_webhook_payload.alert.processViolation.processes | length > 0
+        - rhacs_webhook_payload.alert.processViolation.processes[0].podId is defined
 
     - name: Derive policy name from RHACS alert
       ansible.builtin.set_fact:
