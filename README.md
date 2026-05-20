@@ -160,7 +160,19 @@ aap_ee_registry_username: <quay-user>
 aap_ee_registry_password: "<quay-token-or-password>"
 ```
 
-The playbook runs **`podman login`** to the base-image registry (`quay.io` by default) **before** `ansible-builder build`, then pushes to `aap_ee_image_repository` when `aap_ee_push_image: true`. Set `aap_ee_registry_login: false` if you already logged in on that host.
+When the **base image registry** and **push registry** differ (or use different accounts on the same host), set credentials separately:
+
+```yaml
+aap_ee_base_image: registry.redhat.io/ansible-automation-platform-26/ee-minimal-rhel9:latest
+aap_ee_base_registry_host: registry.redhat.io
+aap_ee_base_registry_username: "<redhat-account>"
+aap_ee_base_registry_password: "<redhat-token>"
+aap_ee_image_repository: quay.io/<your-user>/rhacs-ir-ee
+aap_ee_push_registry_username: "<quay-user>"
+aap_ee_push_registry_password: "<quay-token>"
+```
+
+The playbook logs in to the **base** registry before `ansible-builder build`, then logs in to the **push** registry when the host or credentials differ, before `podman push`. Shared `aap_ee_registry_username` / `aap_ee_registry_password` are used for both when the specific vars are omitted. Set `aap_ee_registry_login: false` if you already logged in on that host.
 
 **Manual authentication** (same registries the playbook uses):
 

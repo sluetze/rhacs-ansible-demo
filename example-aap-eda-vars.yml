@@ -26,8 +26,16 @@
 # aap_ee_image_repository: quay.io/your-user/rhacs-ir-ee
 # aap_ee_image_tag: latest
 # aap_ee_base_image: quay.io/ansible/ansible-execution-env-base:latest
+# Shared login (when base and push use the same registry and account):
 # aap_ee_registry_username: your-user
-# aap_ee_registry_password: "change-me"   # required for podman login before build (Quay robot token or CLI password)
+# aap_ee_registry_password: "change-me"
+# Split login when base registry != push registry (example: Red Hat base, Quay push):
+# aap_ee_base_image: registry.redhat.io/ansible-automation-platform-26/ee-minimal-rhel9:latest
+# aap_ee_base_registry_host: registry.redhat.io
+# aap_ee_base_registry_username: "<redhat-account>"
+# aap_ee_base_registry_password: "<redhat-token>"
+# aap_ee_push_registry_username: your-quay-user
+# aap_ee_push_registry_password: "<quay-token>"
 # aap_ee_registry_login: true             # false if you already ran podman login on this host
 # aap_build_execution_environment: true
 # aap_ee_push_image: true

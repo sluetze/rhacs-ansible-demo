@@ -32,13 +32,20 @@ aap_ee_base_image: quay.io/ansible/ansible-execution-env-base:latest
 aap_ee_base_registry_host: ""
 # Set false if you already ran podman login on the build host
 aap_ee_registry_login: true
-# Credentials for podman login (base pull + image push when hosts match)
-aap_ee_registry_credential_name: RHACS IR EE Registry
-aap_configure_ee_registry_credential: false
-# Push destination; defaults to first segment of aap_ee_image_repository (e.g. quay.io)
-aap_ee_registry_host: ""
+# Shared registry login (used when base/push-specific vars below are empty)
 aap_ee_registry_username: ""
 aap_ee_registry_password: ""
+# Base image registry only (e.g. registry.redhat.io for ee-minimal; defaults to shared creds above)
+aap_ee_base_registry_username: ""
+aap_ee_base_registry_password: ""
+# Push registry only (e.g. quay.io for your EE image; defaults to shared creds above)
+aap_ee_push_registry_username: ""
+aap_ee_push_registry_password: ""
+# Controller credential for AAP to pull the pushed EE image (uses push registry auth)
+aap_ee_registry_credential_name: RHACS IR EE Registry
+aap_configure_ee_registry_credential: false
+# Push destination host; defaults to first segment of aap_ee_image_repository (e.g. quay.io)
+aap_ee_registry_host: ""
 aap_job_template_extra_vars:
   skip_checkpoint: true
   use_oc_for_node_logs: false
