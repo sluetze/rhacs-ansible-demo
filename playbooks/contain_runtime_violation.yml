@@ -329,7 +329,7 @@
       tags: [publish]
 
     - name: Archive collected evidence
-      ansible.builtin.archive:
+      community.general.archive:
         path: "{{ evidence_dir }}/"
         dest: "{{ evidence_archive_path }}"
         format: zip

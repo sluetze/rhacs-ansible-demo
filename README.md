@@ -15,7 +15,7 @@ Target **OpenShift Container Platform 4.19+** (no cluster `FeatureGate` steps fo
 | [playbooks/configure_aap_eda.yml](playbooks/configure_aap_eda.yml) | Bootstrap AAP Controller + EDA (projects, job template, decision env, activation) |
 | [vars/aap_eda_defaults.yml](vars/aap_eda_defaults.yml) | Default names/images for `configure_aap_eda.yml` |
 | [example-aap-eda-vars.yml](example-aap-eda-vars.yml) | Example extra vars for AAP/EDA bootstrap (copy, do not commit) |
-| [collections/requirements.yml](collections/requirements.yml) | `kubernetes.core`, `awx.awx`, `ansible.eda` |
+| [collections/requirements.yml](collections/requirements.yml) | `community.general`, `kubernetes.core`, `awx.awx`, `ansible.eda` |
 
 ## 1. Apply OpenShift RBAC
 
@@ -56,6 +56,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ansible-galaxy collection install -r collections/requirements.yml -p collections
 ```
+
+The publish phase uses **`community.general.archive`** (there is no `ansible.builtin.archive`). Your AAP execution environment must include `community.general` from [collections/requirements.yml](collections/requirements.yml)—rebuild the EE or run `ansible-galaxy collection install` into it after changing requirements.
 
 Use the **same Python** as Ansible (`source .venv/bin/activate` sets `VIRTUAL_ENV`, which the playbook maps to `ansible_python_interpreter`). The `kubernetes` Python package is required for `kubernetes.core` modules.
 
