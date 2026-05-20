@@ -7,3 +7,4 @@ extra-vars.yml
 __pycache__/
 .ansible/
 collections/ansible_collections/
+debug.log
