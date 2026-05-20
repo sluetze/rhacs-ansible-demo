@@ -7,11 +7,25 @@ images:
   base_image:
     name: {{ aap_ee_base_image }}
 
+options:
+  # ee-minimal-rhel9 and similar AAP bases use microdnf; full UBI uses /usr/bin/dnf
+  package_manager_path: {{ aap_ee_builder_package_manager_path }}
+
 dependencies:
   ansible_core:
     package_pip: ansible-core>=2.15
   ansible_runner:
     package_pip: ansible-runner
-  galaxy: collections/requirements.yml
-  python: requirements.txt
-  system: bindep.txt
+  # Paths are relative to .build/ where this file is rendered (see configure_aap_eda.yml)
+  galaxy: ../collections/requirements.yml
+  python: ../requirements.txt
+  system: ../bindep.txt
+  # Only install zip/unzip from bindep.txt — skip collection system deps (e.g. openshift-clients)
+  exclude:
+    system:
+      - openshift-clients
+    all_from_collections:
+      - kubernetes.core
+      - community.general
+      - awx.awx
+      - ansible.eda

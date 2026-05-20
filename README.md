@@ -184,7 +184,7 @@ podman login quay.io -u '<user>' --password-stdin <<< '<token>'
 podman login registry.redhat.io -u '<redhat-account>' --password-stdin <<< '<token>'
 ```
 
-Red Hat subscribers can point `aap_ee_base_image` at an image such as `registry.redhat.io/ansible-automation-platform-26/ee-minimal-rhel9:latest` and log in to `registry.redhat.io` instead of Quay.
+Red Hat subscribers can point `aap_ee_base_image` at an image such as `registry.redhat.io/ansible-automation-platform-26/ee-minimal-rhel9:latest` and log in to `registry.redhat.io` instead of Quay. Minimal AAP EE bases use **microdnf** — set `aap_ee_builder_package_manager_path: /usr/bin/microdnf` (default); full UBI bases use `/usr/bin/dnf`.
 
 Optional: register a **Container Registry** credential on Controller so job pods can pull your private EE image:
 

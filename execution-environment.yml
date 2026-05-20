@@ -1,8 +1,9 @@
 ---
 # Source template: templates/execution-environment.yml.j2
 # configure_aap_eda.yml renders this into .build/execution-environment.yml before ansible-builder runs.
-# Manual build (after podman login — see README):
-#   ansible-builder build -f .build/execution-environment.yml -t <repo>:<tag>
+# Manual build from repo root (after podman login — see README):
+#   ansible-builder build -f execution-environment.yml -t <repo>:<tag>
+# configure_aap_eda.yml renders templates/execution-environment.yml.j2 into .build/ with ../ dependency paths.
 version: 3
 
 images:

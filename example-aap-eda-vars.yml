@@ -31,6 +31,7 @@
 # aap_ee_registry_password: "change-me"
 # Split login when base registry != push registry (example: Red Hat base, Quay push):
 # aap_ee_base_image: registry.redhat.io/ansible-automation-platform-26/ee-minimal-rhel9:latest
+# aap_ee_builder_package_manager_path: /usr/bin/microdnf   # use /usr/bin/dnf for full UBI bases
 # aap_ee_base_registry_host: registry.redhat.io
 # aap_ee_base_registry_username: "<redhat-account>"
 # aap_ee_base_registry_password: "<redhat-token>"
