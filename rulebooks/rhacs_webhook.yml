@@ -30,6 +30,9 @@
           job_args:
             extra_vars:
               rhacs_webhook_payload: "{{ event.payload }}"
+              target_namespace: "{{ event.payload.alert.namespace }}"
+              target_pod: "{{ event.payload.alert.deployment.name }}"
+              target_cluster: "{{ event.payload.alert.clusterName }}"
               # these should come from the inventory
               # ocp_api: "{{ ocp_api }}"
               # ocp_token: "{{ ocp_token }}"
