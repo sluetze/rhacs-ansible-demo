@@ -36,8 +36,9 @@
           job_args:
             extra_vars:
               rhacs_webhook_payload: "{{ event.payload }}"
-              ocp_api: "{{ ocp_api }}"
-              ocp_token: "{{ ocp_token }}"
-              ocp_verify_ssl: "{{ ocp_verify_ssl | default(true) }}"
+              # these should come from the inventory
+              # ocp_api: "{{ ocp_api }}"
+              # ocp_token: "{{ ocp_token }}"
+              # ocp_verify_ssl: "{{ ocp_verify_ssl | default(true) }}"
               skip_checkpoint: "{{ skip_checkpoint | default(false) }}"
               use_oc_for_node_logs: "{{ use_oc_for_node_logs | default(false) }}"
