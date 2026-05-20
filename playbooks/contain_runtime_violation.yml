@@ -12,6 +12,9 @@
 #   - host, bearer_token, verify_ssl (from Controller OpenShift/K8s credential; legacy ocp_* aliases)
 #   - skip_checkpoint: true to skip kubelet checkpoint call
 #   - use_oc_for_node_logs: true uses oc adm node-logs (default false for AAP without oc CLI)
+#   - evidence_publish_enabled: false to skip zip + nginx download pod (tag publish)
+#   - evidence_ir_namespace (default rhacs-incident-response)
+#   - evidence_nginx_image (default registry.access.redhat.com/hi/nginx:latest)
 #
 - name: RHACS incident response — logs, optional checkpoint, NetworkPolicy containment
   hosts: localhost
@@ -292,3 +295,143 @@
         msg: >-
           Evidence under {{ evidence_dir }}.
           Target namespace {{ target_namespace }} (NetworkPolicy only if tag networkpolicy ran).
+          {% if evidence_publish_enabled | default(true) | bool %}
+          Publish phase will zip evidence and expose an HTTP download (tag publish).
+          {% endif %}
+
+  post_tasks:
+    - name: Set evidence publish id
+      ansible.builtin.set_fact:
+        _rhacs_evidence_publish_id: "{{ 'rhacs-ir-evidence-' ~ ansible_date_time.epoch }}"
+      when: evidence_publish_enabled | default(true) | bool
+      tags: [publish]
+
+    - name: Set evidence publish defaults
+      ansible.builtin.set_fact:
+        evidence_publish_enabled: "{{ evidence_publish_enabled | default(true) | bool }}"
+        evidence_ir_namespace: "{{ evidence_ir_namespace | default('rhacs-incident-response') }}"
+        evidence_nginx_image: "{{ evidence_nginx_image | default('registry.access.redhat.com/hi/nginx:latest') }}"
+        evidence_nginx_pod_name: "{{ evidence_nginx_pod_name | default(_rhacs_evidence_publish_id) }}"
+        evidence_service_name: "{{ evidence_service_name | default(_rhacs_evidence_publish_id) }}"
+        evidence_archive_name: "{{ evidence_archive_name | default('rhacs-evidence-' ~ ansible_date_time.iso8601_basic_short ~ '.zip') }}"
+        evidence_nginx_mount_path: "{{ evidence_nginx_mount_path | default('/usr/share/nginx/html') }}"
+        evidence_nginx_container_port: "{{ evidence_nginx_container_port | default(80) }}"
+        evidence_nginx_container_name: "{{ evidence_nginx_container_name | default('nginx') }}"
+        evidence_service_port: "{{ evidence_service_port | default(8080) }}"
+        evidence_create_route: "{{ evidence_create_route | default(true) | bool }}"
+      when: evidence_publish_enabled | default(true) | bool
+      tags: [publish]
+
+    - name: Set evidence archive path
+      ansible.builtin.set_fact:
+        evidence_archive_path: "{{ evidence_dir | dirname }}/{{ evidence_archive_name }}"
+      when: evidence_publish_enabled | default(true) | bool
+      tags: [publish]
+
+    - name: Archive collected evidence
+      ansible.builtin.archive:
+        path: "{{ evidence_dir }}/"
+        dest: "{{ evidence_archive_path }}"
+        format: zip
+      when: evidence_publish_enabled | default(true) | bool
+      tags: [publish]
+
+    - name: Deploy evidence nginx pod
+      kubernetes.core.k8s:
+        host: "{{ host }}"
+        api_key: "{{ bearer_token }}"
+        validate_certs: "{{ verify_ssl }}"
+        state: present
+        definition: "{{ lookup('template', playbook_dir + '/../templates/evidence-nginx-pod.yaml.j2') | from_yaml }}"
+      register: evidence_nginx_pod
+      when: evidence_publish_enabled | default(true) | bool
+      tags: [publish]
+
+    - name: Wait for evidence nginx pod to be Ready
+      kubernetes.core.k8s_info:
+        host: "{{ host }}"
+        api_key: "{{ bearer_token }}"
+        validate_certs: "{{ verify_ssl }}"
+        kind: Pod
+        namespace: "{{ evidence_ir_namespace }}"
+        name: "{{ evidence_nginx_pod_name }}"
+      register: evidence_pod_status
+      until:
+        - evidence_pod_status.resources | length > 0
+        - evidence_pod_status.resources[0].status.phase == 'Running'
+        - evidence_pod_status.resources[0].status.containerStatuses is defined
+        - evidence_pod_status.resources[0].status.containerStatuses | selectattr('ready', 'equalto', true) | list | length > 0
+      retries: 24
+      delay: 5
+      when: evidence_publish_enabled | default(true) | bool
+      tags: [publish]
+
+    - name: Copy evidence archive into nginx pod
+      kubernetes.core.k8s_cp:
+        host: "{{ host }}"
+        api_key: "{{ bearer_token }}"
+        validate_certs: "{{ verify_ssl }}"
+        namespace: "{{ evidence_ir_namespace }}"
+        pod: "{{ evidence_nginx_pod_name }}"
+        container: "{{ evidence_nginx_container_name }}"
+        local_path: "{{ evidence_archive_path }}"
+        remote_path: "{{ evidence_nginx_mount_path }}/{{ evidence_archive_name }}"
+        state: to_pod
+      when: evidence_publish_enabled | default(true) | bool
+      tags: [publish]
+
+    - name: Deploy evidence download Service
+      kubernetes.core.k8s:
+        host: "{{ host }}"
+        api_key: "{{ bearer_token }}"
+        validate_certs: "{{ verify_ssl }}"
+        state: present
+        definition: "{{ lookup('template', playbook_dir + '/../templates/evidence-nginx-service.yaml.j2') | from_yaml }}"
+      when: evidence_publish_enabled | default(true) | bool
+      tags: [publish]
+
+    - name: Deploy evidence download Route
+      kubernetes.core.k8s:
+        host: "{{ host }}"
+        api_key: "{{ bearer_token }}"
+        validate_certs: "{{ verify_ssl }}"
+        state: present
+        definition: "{{ lookup('template', playbook_dir + '/../templates/evidence-nginx-route.yaml.j2') | from_yaml }}"
+      when:
+        - evidence_publish_enabled | default(true) | bool
+        - evidence_create_route | default(true) | bool
+      tags: [publish]
+
+    - name: Read Route for external download URL
+      kubernetes.core.k8s_info:
+        host: "{{ host }}"
+        api_key: "{{ bearer_token }}"
+        validate_certs: "{{ verify_ssl }}"
+        api_version: route.openshift.io/v1
+        kind: Route
+        namespace: "{{ evidence_ir_namespace }}"
+        name: "{{ evidence_service_name }}"
+      register: evidence_route_info
+      when:
+        - evidence_publish_enabled | default(true) | bool
+        - evidence_create_route | default(true) | bool
+      tags: [publish]
+
+    - name: Publish summary
+      ansible.builtin.debug:
+        msg: >-
+          Evidence collected under {{ evidence_dir }}.
+          Archive: {{ evidence_archive_path }}.
+          Nginx pod {{ evidence_nginx_pod_name }} in namespace {{ evidence_ir_namespace }}
+          (image {{ evidence_nginx_image }}).
+          In-cluster download:
+          http://{{ evidence_service_name }}.{{ evidence_ir_namespace }}.svc:{{
+          evidence_service_port }}/{{ evidence_archive_name }}.
+          {% if evidence_create_route | default(true) | bool and evidence_route_info.resources | default([]) | length > 0 %}
+          External download:
+          https://{{ evidence_route_info.resources[0].status.ingress[0].host | default(evidence_route_info.resources[0].spec.host) }}/{{ evidence_archive_name }}.
+          {% endif %}
+          Cleanup when done:
+          oc delete pod,svc,route -n {{ evidence_ir_namespace }} -l app=rhacs-ir-evidence
+      when: evidence_publish_enabled | default(true) | bool
+      tags: [publish]

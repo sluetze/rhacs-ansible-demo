@@ -1,0 +1,35 @@
+# Namespace-scoped RBAC for evidence nginx pod, Service, Route, and k8s_cp (pods/exec).
+# Apply with: oc apply -k infra/rbac/
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: rhacs-ir-evidence-publish
+  namespace: rhacs-incident-response
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "create", "delete", "patch", "update"]
+  - apiGroups: ["route.openshift.io"]
+    resources: ["routes"]
+    verbs: ["get", "list", "create", "delete", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rhacs-ir-evidence-publish
+  namespace: rhacs-incident-response
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: rhacs-ir-evidence-publish
+subjects:
+  - kind: ServiceAccount
+    name: rhacs-ir-runner
+    namespace: rhacs-incident-response

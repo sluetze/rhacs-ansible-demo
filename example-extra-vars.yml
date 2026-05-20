@@ -14,3 +14,10 @@
 # skip_checkpoint: true
 # use_oc_for_node_logs: true   # requires oc CLI on controller where playbook runs
 # networkpolicy_name: rhacs-ir-deny-all
+#
+# Evidence publish (zip + Red Hat Hummingbird nginx download pod in rhacs-incident-response):
+# evidence_publish_enabled: true
+# evidence_publish_enabled: false   # local runs without publish Role applied
+# evidence_nginx_image: registry.access.redhat.com/hi/nginx:latest
+# evidence_ir_namespace: rhacs-incident-response
+# evidence_create_route: true

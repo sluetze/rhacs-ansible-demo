@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ evidence_service_name }}
+  namespace: {{ evidence_ir_namespace }}
+  labels:
+    app: rhacs-ir-evidence
+    app.kubernetes.io/managed-by: rhacs-incident-response
+spec:
+  type: ClusterIP
+  selector:
+    app: rhacs-ir-evidence
+    rhacs-ir/incident: "{{ ansible_date_time.epoch }}"
+  ports:
+    - name: http
+      port: {{ evidence_service_port | default(8080) }}
+      targetPort: {{ evidence_nginx_container_port | default(80) }}
+      protocol: TCP

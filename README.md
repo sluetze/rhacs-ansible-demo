@@ -8,8 +8,8 @@ Target **OpenShift Container Platform 4.19+** (no cluster `FeatureGate` steps fo
 
 | Path | Purpose |
 |------|---------|
-| [infra/rbac/](infra/rbac/) | Namespace `rhacs-incident-response`, `ServiceAccount` `rhacs-ir-runner`, `ClusterRole` `rhacs-ir-openshift-ops`, token `Secret` |
-| [playbooks/contain_runtime_violation.yml](playbooks/contain_runtime_violation.yml) | Main playbook (tags: `logs`, `checkpoint`, `networkpolicy`) |
+| [infra/rbac/](infra/rbac/) | Namespace `rhacs-incident-response`, `ServiceAccount` `rhacs-ir-runner`, `ClusterRole` `rhacs-ir-openshift-ops`, publish `Role`/`RoleBinding`, token `Secret` |
+| [playbooks/contain_runtime_violation.yml](playbooks/contain_runtime_violation.yml) | Main playbook (tags: `logs`, `checkpoint`, `networkpolicy`, `publish`) |
 | [templates/networkpolicy-deny-all.yaml.j2](templates/networkpolicy-deny-all.yaml.j2) | Deny ingress+egress for `podSelector.matchLabels` |
 | [rulebooks/rhacs_webhook.yml](rulebooks/rhacs_webhook.yml) | Starter EDA rulebook (`ansible.eda.webhook`) |
 | [playbooks/configure_aap_eda.yml](playbooks/configure_aap_eda.yml) | Bootstrap AAP Controller + EDA (projects, job template, decision env, activation) |
@@ -35,7 +35,18 @@ Optional checks:
 ```bash
 oc auth can-i create nodes --subresource=proxy \
   --as=system:serviceaccount:rhacs-incident-response:rhacs-ir-runner
+
+oc auth can-i create pods -n rhacs-incident-response \
+  --as=system:serviceaccount:rhacs-incident-response:rhacs-ir-runner
+
+oc auth can-i create routes -n rhacs-incident-response \
+  --as=system:serviceaccount:rhacs-incident-response:rhacs-ir-runner
 ```
+
+RBAC is split by scope:
+
+- **ClusterRole** `rhacs-ir-openshift-ops` — forensic API calls (pod logs, nodes/proxy checkpoint, NetworkPolicies).
+- **Role** `rhacs-ir-evidence-publish` (namespace `rhacs-incident-response`) — spawn nginx download pod, Service, Route, and `pods/exec` for copying the zip archive.
 
 ## 2. Local Ansible (optional)
 
@@ -71,6 +82,8 @@ ansible-playbook playbooks/contain_runtime_violation.yml \
 
 Artifacts land under `$HOME/rhacs-ir-evidence/<timestamp>/` unless you set `evidence_dir`.
 
+By default the playbook also **zips** that directory and publishes it via a **Project Hummingbird nginx** pod (`registry.access.redhat.com/hi/nginx:latest`) in `rhacs-incident-response`, with an OpenShift **Route** for HTTP download (tag `publish`). Skip with `--skip-tags publish` or `-e evidence_publish_enabled=false`.
+
 Important extra vars:
 
 | Variable | Meaning |
@@ -82,6 +95,25 @@ Important extra vars:
 | `use_oc_for_node_logs` | `true` to run `oc adm node-logs` on the controller (requires `oc`; adds `--tail` to bound volume) |
 | `node_log_tail` | Max lines per node unit (default `5000`) |
 | `rhacs_webhook_payload` | Entire JSON body from RHACS; playbook maps `alert.deployment.namespace`, `alert.pod` / `alert.pod.name`, `alert.policy.name` when possible |
+| `evidence_publish_enabled` | `true` (default) zip evidence and expose nginx download pod; `false` to collect only |
+| `evidence_nginx_image` | Default `registry.access.redhat.com/hi/nginx:latest` (requires cluster pull from `registry.access.redhat.com`) |
+| `evidence_ir_namespace` | Default `rhacs-incident-response` |
+| `evidence_create_route` | `true` (default) create OpenShift Route for external download URL |
+
+### Evidence download (publish phase)
+
+After collection, the playbook creates a pod (same namespace as `rhacs-ir-runner`), copies the zip into the nginx docroot, and prints URLs in the job output. Example cleanup:
+
+```bash
+oc delete pod,svc,route -n rhacs-incident-response -l app=rhacs-ir-evidence
+```
+
+Download via the Route host from the playbook summary, or port-forward the Service:
+
+```bash
+oc port-forward -n rhacs-incident-response svc/<service-name> 8080:8080
+curl -O "http://127.0.0.1:8080/rhacs-evidence-<timestamp>.zip"
+```
 
 Your `.env` can hold **RHACS** and **AAP** hints, for example:
 

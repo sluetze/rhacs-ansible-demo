@@ -1,0 +1,21 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ evidence_service_name }}
+  namespace: {{ evidence_ir_namespace }}
+  labels:
+    app: rhacs-ir-evidence
+    app.kubernetes.io/managed-by: rhacs-incident-response
+spec:
+{% if evidence_route_hostname is defined and (evidence_route_hostname | length) > 0 %}
+  host: {{ evidence_route_hostname }}
+{% endif %}
+  to:
+    kind: Service
+    name: {{ evidence_service_name }}
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

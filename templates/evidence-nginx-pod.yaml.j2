@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ evidence_nginx_pod_name }}
+  namespace: {{ evidence_ir_namespace }}
+  labels:
+    app: rhacs-ir-evidence
+    app.kubernetes.io/managed-by: rhacs-incident-response
+    rhacs-ir/incident: "{{ ansible_date_time.epoch }}"
+spec:
+  restartPolicy: Never
+  containers:
+    - name: {{ evidence_nginx_container_name | default('nginx') }}
+      image: "{{ evidence_nginx_image }}"
+      imagePullPolicy: IfNotPresent
+      ports:
+        - containerPort: {{ evidence_nginx_container_port | default(80) }}
+          protocol: TCP
+      volumeMounts:
+        - name: evidence
+          mountPath: "{{ evidence_nginx_mount_path }}"
+  volumes:
+    - name: evidence
+      emptyDir: {}

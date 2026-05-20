@@ -17,6 +17,8 @@ aap_execution_environment_name: Default execution environment
 aap_job_template_extra_vars:
   skip_checkpoint: true
   use_oc_for_node_logs: false
+  evidence_publish_enabled: true
+  evidence_nginx_image: registry.access.redhat.com/hi/nginx:latest
 
 # OpenShift API credential on Controller (injects host, bearer_token, verify_ssl into job runs)
 aap_configure_ocp_credential: true
