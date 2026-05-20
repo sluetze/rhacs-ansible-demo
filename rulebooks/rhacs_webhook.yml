@@ -21,12 +21,6 @@
         token: "{{ webhook_token | default('change-me') }}"
 
   rules:
-    - name: Print full event
-      condition: event is defined
-      action:
-        debug:
-          var: event
-
     - name: RHACS alert with policy and deployment context
       condition: event.payload.alert is defined
       action:
