@@ -1,0 +1,27 @@
+apiVersion: config.stackrox.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: rhacs-forensics
+spec:
+  policyName: RHACS-FORENSICS
+  categories:
+    - Anomalous Activity
+  lifecycleStages:
+    - RUNTIME
+  eventSource: DEPLOYMENT_EVENT
+  scope:
+    - cluster: b57c4fb3-d97f-436d-b7e3-daf693812606
+      namespace: openshift-terminal
+  severity: CRITICAL_SEVERITY
+  notifiers:
+    - AAP-Forensics
+  policySections:
+    - sectionName: Rule 1
+      policyGroups:
+        - fieldName: Process Name
+          booleanOperator: OR
+          values:
+            - value: curl
+  criteriaLocked: false
+  mitreVectorsLocked: false
+  isDefault: false
