@@ -33,6 +33,12 @@
           Define ocp_api (e.g. https://api.cluster:6443) and ocp_token (ServiceAccount bearer
           from rhacs-ir-runner-token secret).
 
+    - name: Print full event
+      ansible.builtin.debug:
+        var: rhacs_webhook_payload
+      when:
+        - rhacs_webhook_payload is defined
+
     - name: Derive target_namespace from RHACS webhook when unset
       ansible.builtin.set_fact:
         target_namespace: "{{ rhacs_webhook_payload.alert.deployment.namespace }}"
