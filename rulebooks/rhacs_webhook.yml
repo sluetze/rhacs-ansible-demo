@@ -24,12 +24,7 @@
     - name: RHACS runtime process violation
       # Event stream (pg_listener) wraps RHACS body in payload; use bracket notation so
       # ansible-rulebook does not treat keys like "deployment" as standalone Jinja vars.
-      condition:
-        all:
-          - event.payload is defined
-          - event.payload['alert'] is defined
-          - event.payload['alert']['processViolation'] is defined
-          - event.payload['alert']['processViolation']['processes'] is defined
+      condition: event.payload['alert']['processViolation'] is defined
       action:
         run_job_template:
           name: "{{ job_template_name | default('RHACS Contain Runtime Violation') }}"
