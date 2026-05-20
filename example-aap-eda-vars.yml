@@ -25,13 +25,14 @@
 # Execution environment (ansible-builder build + push + Controller registration):
 # aap_ee_image_repository: quay.io/your-user/rhacs-ir-ee
 # aap_ee_image_tag: latest
+# aap_ee_base_image: quay.io/ansible/ansible-execution-env-base:latest
+# aap_ee_registry_username: your-user
+# aap_ee_registry_password: "change-me"   # required for podman login before build (Quay robot token or CLI password)
+# aap_ee_registry_login: true             # false if you already ran podman login on this host
 # aap_build_execution_environment: true
 # aap_ee_push_image: true
 # aap_configure_ee_registry_credential: true
 # aap_ee_registry_credential_name: RHACS IR EE Registry
-# aap_ee_registry_host: quay.io
-# aap_ee_registry_username: your-user
-# aap_ee_registry_password: "change-me"
 # aap_build_execution_environment: false   # only register image already in registry
 #
 # Username/password overrides from vars/aap_eda_defaults.yml (RHACS → EDA event stream basic auth):

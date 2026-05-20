@@ -149,31 +149,51 @@ Use tags to run only one side: `--tags controller` or `--tags eda`. Defaults liv
 
 `configure_aap_eda.yml` can **build**, **push**, and **register** a Controller execution environment that installs every collection in [collections/requirements.yml](collections/requirements.yml) plus Python deps from [requirements.txt](requirements.txt).
 
-On the machine running the bootstrap playbook, install **ansible-builder** and **podman** (or set `aap_ee_container_cli: docker`). In `aap-eda-vars.yml` set a real registry path:
+The build uses the **supported Ansible EE base** `quay.io/ansible/ansible-execution-env-base:latest` (see [templates/execution-environment.yml.j2](templates/execution-environment.yml.j2)). That image is **not anonymous** — you must authenticate to the registry before `ansible-builder` can pull it.
+
+On the machine running the bootstrap playbook, install **ansible-builder** and **podman** (or set `aap_ee_container_cli: docker`). In `aap-eda-vars.yml`:
 
 ```yaml
 aap_ee_image_repository: quay.io/<your-user>/rhacs-ir-ee
 aap_ee_image_tag: latest
+aap_ee_registry_username: <quay-user>
+aap_ee_registry_password: "<quay-token-or-password>"
 ```
 
-Optional registry auth for push and for AAP to pull private images:
+The playbook runs **`podman login`** to the base-image registry (`quay.io` by default) **before** `ansible-builder build`, then pushes to `aap_ee_image_repository` when `aap_ee_push_image: true`. Set `aap_ee_registry_login: false` if you already logged in on that host.
+
+**Manual authentication** (same registries the playbook uses):
+
+```bash
+# Pull ansible-execution-env-base and push your EE image to Quay
+podman login quay.io -u '<user>' --password-stdin <<< '<token>'
+
+# Red Hat AAP minimal EE base (alternative — set aap_ee_base_image in aap-eda-vars.yml)
+podman login registry.redhat.io -u '<redhat-account>' --password-stdin <<< '<token>'
+```
+
+Red Hat subscribers can point `aap_ee_base_image` at an image such as `registry.redhat.io/ansible-automation-platform-26/ee-minimal-rhel9:latest` and log in to `registry.redhat.io` instead of Quay.
+
+Optional: register a **Container Registry** credential on Controller so job pods can pull your private EE image:
 
 ```yaml
 aap_configure_ee_registry_credential: true
 aap_ee_registry_credential_name: RHACS IR EE Registry
-aap_ee_registry_host: quay.io
-aap_ee_registry_username: <user>
-aap_ee_registry_password: "<token>"
 ```
 
-Manual build (same definition):
+Manual build after login:
 
 ```bash
-ansible-builder build -f execution-environment.yml -t quay.io/<you>/rhacs-ir-ee:latest
+ansible-playbook playbooks/configure_aap_eda.yml -e @aap-eda-vars.yml --tags execution_environment \
+  -e aap_build_execution_environment=true -e aap_configure_execution_environment=false
+# Or render + build yourself:
+mkdir -p .build
+# use rendered .build/execution-environment.yml from a full configure run, then:
+ansible-builder build -f .build/execution-environment.yml -t quay.io/<you>/rhacs-ir-ee:latest
 podman push quay.io/<you>/rhacs-ir-ee:latest
 ```
 
-Skip image build and only register an existing image: `-e aap_build_execution_environment=false` (still set `aap_ee_image_repository` / tag). EE-only tasks: `--tags execution_environment`.
+Skip image build and only register an existing image: `-e aap_build_execution_environment=false`. EE-only tasks: `--tags execution_environment`.
 
 ### Option B — Manual UI
 

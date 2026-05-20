@@ -1,0 +1,17 @@
+---
+# Ansible Builder v3 — RHACS incident-response Controller execution environment.
+# Rendered by configure_aap_eda.yml; base image requires registry authentication to pull.
+version: 3
+
+images:
+  base_image:
+    name: {{ aap_ee_base_image }}
+
+dependencies:
+  ansible_core:
+    package_pip: ansible-core>=2.15
+  ansible_runner:
+    package_pip: ansible-runner
+  galaxy: collections/requirements.yml
+  python: requirements.txt
+  system: bindep.txt

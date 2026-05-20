@@ -25,10 +25,17 @@ aap_ee_image_tag: latest
 aap_ee_image_pull: missing
 aap_ee_builder_bin: ansible-builder
 aap_ee_container_cli: podman
-aap_ee_definition_file: execution-environment.yml
-# Optional: Container Registry credential on Controller (name must exist or use aap_configure_ee_registry_credential)
-aap_ee_registry_credential_name: ""
+aap_ee_definition_rendered: .build/execution-environment.yml
+# Supported EE base (requires registry login before ansible-builder — see README)
+aap_ee_base_image: quay.io/ansible/ansible-execution-env-base:latest
+# Registry host for base image pull; defaults to first segment of aap_ee_base_image (e.g. quay.io)
+aap_ee_base_registry_host: ""
+# Set false if you already ran podman login on the build host
+aap_ee_registry_login: true
+# Credentials for podman login (base pull + image push when hosts match)
+aap_ee_registry_credential_name: RHACS IR EE Registry
 aap_configure_ee_registry_credential: false
+# Push destination; defaults to first segment of aap_ee_image_repository (e.g. quay.io)
 aap_ee_registry_host: ""
 aap_ee_registry_username: ""
 aap_ee_registry_password: ""

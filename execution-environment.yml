@@ -1,6 +1,8 @@
 ---
-# Ansible Builder v3 — RHACS incident-response Controller execution environment.
-# Build: ansible-builder build -f execution-environment.yml -t <repository>:<tag>
+# Source template: templates/execution-environment.yml.j2
+# configure_aap_eda.yml renders this into .build/execution-environment.yml before ansible-builder runs.
+# Manual build (after podman login — see README):
+#   ansible-builder build -f .build/execution-environment.yml -t <repo>:<tag>
 version: 3
 
 images:

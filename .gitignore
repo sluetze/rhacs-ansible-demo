@@ -8,5 +8,6 @@ __pycache__/
 .ansible/
 context/
 _build/
+.build/
 collections/ansible_collections/
 debug.log

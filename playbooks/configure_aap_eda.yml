@@ -21,8 +21,8 @@
   vars_files:
     - ../vars/aap_eda_defaults.yml
   vars:
-    # awx.awx modules expect the platform base URL (no /api/controller). The collection
-    # adds the API prefix via CONTROLLER_OPTIONAL_API_URLPATTERN_PREFIX on AAP gateway installs.
+    # awx.awx modules (Galaxy-installable; works against AAP with CONTROLLER_OPTIONAL_API_URLPATTERN_PREFIX).
+    # ansible.controller is Automation Hub only — not in collections/requirements.yml.
     _controller_host_raw: >-
       {{
         aap_controller_host
@@ -37,6 +37,17 @@
     _job_template_extra_vars: "{{ aap_job_template_extra_vars }}"
     _aap_repo_root: "{{ playbook_dir | dirname }}"
     _aap_ee_image: "{{ aap_ee_image_repository }}:{{ aap_ee_image_tag }}"
+    _aap_ee_registry_host: >-
+      {{
+        aap_ee_registry_host
+        | default(aap_ee_image_repository.split('/')[0], true)
+      }}
+    _aap_ee_base_registry_host: >-
+      {{
+        aap_ee_base_registry_host
+        | default(aap_ee_base_image.split('/')[0], true)
+      }}
+    _aap_ee_definition_path: "{{ _aap_repo_root }}/{{ aap_ee_definition_rendered }}"
   environment:
     CONTROLLER_OPTIONAL_API_URLPATTERN_PREFIX: /api/controller/
   module_defaults:
@@ -126,6 +137,71 @@
       register: _aap_ee_container_cli_version
       changed_when: false
 
+    - name: Require registry credentials when automated EE login is enabled
+      when:
+        - aap_build_execution_environment | bool
+        - aap_ee_registry_login | default(true) | bool
+      tags: [execution_environment, controller]
+      ansible.builtin.assert:
+        that:
+          - aap_ee_registry_username is defined
+          - aap_ee_registry_username | length > 0
+          - aap_ee_registry_password is defined
+          - aap_ee_registry_password | length > 0
+        fail_msg: >-
+          Set aap_ee_registry_username and aap_ee_registry_password in aap-eda-vars.yml for
+          podman login, or pass -e aap_ee_registry_login=false after logging in manually (see README).
+
+    - name: Ensure EE build output directory exists
+      when: aap_build_execution_environment | bool
+      ansible.builtin.file:
+        path: "{{ _aap_repo_root }}/.build"
+        state: directory
+        mode: "0755"
+      tags: [execution_environment, controller]
+
+    - name: Render execution-environment definition for ansible-builder
+      when: aap_build_execution_environment | bool
+      ansible.builtin.template:
+        src: execution-environment.yml.j2
+        dest: "{{ _aap_ee_definition_path }}"
+        mode: "0644"
+      tags: [execution_environment, controller]
+
+    - name: Log in to registry for supported EE base image pull
+      when:
+        - aap_build_execution_environment | bool
+        - aap_ee_registry_login | default(true) | bool
+        - _aap_ee_base_registry_host | length > 0
+        - aap_ee_registry_username | length > 0
+        - aap_ee_registry_password | length > 0
+      ansible.builtin.shell:
+        cmd: >-
+          {{ aap_ee_container_cli }} login {{ _aap_ee_base_registry_host }}
+          --username {{ aap_ee_registry_username | quote }} --password-stdin
+        stdin: "{{ aap_ee_registry_password }}"
+      changed_when: false
+      no_log: true
+      tags: [execution_environment, controller]
+
+    - name: Log in to registry for EE image push (different host than base)
+      when:
+        - aap_build_execution_environment | bool
+        - aap_ee_push_image | bool
+        - aap_ee_registry_login | default(true) | bool
+        - _aap_ee_registry_host | length > 0
+        - _aap_ee_registry_host != _aap_ee_base_registry_host
+        - aap_ee_registry_username | length > 0
+        - aap_ee_registry_password | length > 0
+      ansible.builtin.shell:
+        cmd: >-
+          {{ aap_ee_container_cli }} login {{ _aap_ee_registry_host }}
+          --username {{ aap_ee_registry_username | quote }} --password-stdin
+        stdin: "{{ aap_ee_registry_password }}"
+      changed_when: false
+      no_log: true
+      tags: [execution_environment, controller]
+
     - name: Build execution environment image
       when: aap_build_execution_environment | bool
       tags: [execution_environment, controller]
@@ -134,7 +210,7 @@
           - "{{ aap_ee_builder_bin }}"
           - build
           - -f
-          - "{{ aap_ee_definition_file }}"
+          - "{{ aap_ee_definition_rendered }}"
           - -t
           - "{{ _aap_ee_image }}"
           - -c
@@ -142,26 +218,6 @@
         chdir: "{{ _aap_repo_root }}"
       register: _aap_ee_build
       changed_when: _aap_ee_build.rc == 0
-
-    - name: Log in to container registry for EE push
-      when:
-        - aap_build_execution_environment | bool
-        - aap_ee_push_image | bool
-        - aap_configure_ee_registry_credential | bool
-        - aap_ee_registry_host | length > 0
-        - aap_ee_registry_username | length > 0
-        - aap_ee_registry_password | length > 0
-      ansible.builtin.command:
-        argv:
-          - "{{ aap_ee_container_cli }}"
-          - login
-          - "{{ aap_ee_registry_host }}"
-          - --username
-          - "{{ aap_ee_registry_username }}"
-          - "--password={{ aap_ee_registry_password }}"
-      changed_when: false
-      no_log: true
-      tags: [execution_environment, controller]
 
     - name: Push execution environment image to registry
       when:
@@ -180,7 +236,7 @@
       when:
         - aap_configure_ee_registry_credential | bool
         - aap_ee_registry_credential_name | length > 0
-        - aap_ee_registry_host | length > 0
+        - _aap_ee_registry_host | length > 0
         - aap_ee_registry_username | length > 0
         - aap_ee_registry_password | length > 0
       awx.awx.credential:
@@ -189,7 +245,7 @@
         organization: "{{ aap_organization }}"
         credential_type: Container Registry
         inputs:
-          host: "{{ aap_ee_registry_host }}"
+          host: "{{ _aap_ee_registry_host }}"
           username: "{{ aap_ee_registry_username }}"
           password: "{{ aap_ee_registry_password }}"
       no_log: true
