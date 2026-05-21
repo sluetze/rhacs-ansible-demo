@@ -11,7 +11,7 @@
 #   - evidence_dir (default: ~/rhacs-ir-evidence/<timestamp> on controller)
 #   - host, bearer_token, verify_ssl (from Controller OpenShift/K8s credential; legacy ocp_* aliases)
 #   - enable_checkpoint_collection: false to skip kubelet checkpoint (default true)
-#   - enable_nodelog_collection: false skips oc adm node-logs (default true; EE includes openshift-clients)
+#   - enable_nodelog_collection: false skips oc adm node-logs (default true; RHACS IR EE installs oc)
 #   - evidence_publish_enabled: false to skip zip + nginx download pod (tag publish)
 #   - evidence_ir_namespace (default rhacs-incident-response)
 #   - evidence_nginx_image (default registry.access.redhat.com/hi/nginx:latest)

@@ -100,7 +100,7 @@ Important extra vars:
 | `bearer_token` | Bearer token for `rhacs-ir-runner` (same credential) |
 | `verify_ssl` | `true`/`false` from credential; use `false` only with care in internal labs |
 | `enable_checkpoint_collection` | `true` (default) runs `POST .../proxy/checkpoint/...`; set `false` when CRI-U is off |
-| `enable_nodelog_collection` | `true` (default) runs `oc adm node-logs` via the EE `openshift-clients` package; set `false` to skip |
+| `enable_nodelog_collection` | `true` (default) runs `oc adm node-logs` using `oc` baked into the RHACS IR EE; set `false` to skip |
 | `node_log_tail` | Max lines per node unit (default `5000`) |
 | `rhacs_webhook_payload` | Entire JSON body from RHACS; playbook maps `alert.deployment.namespace`, `alert.pod` / `alert.pod.name`, `alert.policy.name` when possible |
 | `evidence_publish_enabled` | `true` (default) zip evidence and expose nginx download pod; `false` to collect only |
@@ -164,7 +164,7 @@ The Controller project is **not** synced during `configure_aap_eda.yml` (no `upd
 
 ### Execution environment build and upload
 
-`configure_aap_eda.yml` can **build**, **push**, and **register** a Controller execution environment that installs every collection in [collections/requirements.yml](collections/requirements.yml), Python deps from [requirements.txt](requirements.txt), and system packages from [bindep.txt](bindep.txt) (including **openshift-clients** for `oc adm node-logs`).
+`configure_aap_eda.yml` can **build**, **push**, and **register** a Controller execution environment that installs every collection in [collections/requirements.yml](collections/requirements.yml), Python deps from [requirements.txt](requirements.txt), and system packages from [bindep.txt](bindep.txt). The **`oc`** CLI is downloaded from the OpenShift client mirror during the image build via Python (`aap_ee_oc_client_download_url` in [vars/aap_eda_defaults.yml](vars/aap_eda_defaults.yml)) because `openshift-clients` is not available in ee-minimal base repos and installing the `curl` RPM conflicts with `curl-minimal` on AAP minimal images.
 
 The build uses the **supported Ansible EE base** `quay.io/ansible/ansible-execution-env-base:latest` (see [templates/execution-environment.yml.j2](templates/execution-environment.yml.j2)). That image is **not anonymous** — you must authenticate to the registry before `ansible-builder` can pull it.
 

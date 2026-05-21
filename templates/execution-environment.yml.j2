@@ -20,10 +20,25 @@ dependencies:
   galaxy: ../collections/requirements.yml
   python: ../requirements.txt
   system: ../bindep.txt
-  # Skip collection-pulled system deps; openshift-clients comes from bindep.txt (oc for node logs)
   exclude:
     all_from_collections:
       - kubernetes.core
       - community.general
       - awx.awx
       - ansible.eda
+
+# openshift-clients RPM is not in ee-minimal/AAP base repos — install oc from the public mirror.
+# Use Python (already in the EE) to avoid curl/curl-minimal package conflicts on AAP minimal bases.
+additional_build_steps:
+  append_final:
+    - >-
+      RUN python3 -c "import os, stat, tarfile, urllib.request;
+      p='/tmp/openshift-client-linux.tar.gz';
+      urllib.request.urlretrieve('{{ aap_ee_oc_client_download_url }}', p);
+      t=tarfile.open(p);
+      m=t.getmember('oc');
+      m.mode=stat.S_IMODE(m.mode)|0o111;
+      t.extract(m, path='/usr/local/bin');
+      t.close();
+      os.remove(p)"
+    - RUN /usr/local/bin/oc version --client

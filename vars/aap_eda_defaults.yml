@@ -37,6 +37,8 @@ aap_ee_definition_rendered: .build/execution-environment.yml
 aap_ee_base_image: quay.io/ansible/ansible-execution-env-base:latest
 # ee-minimal / AAP bases use microdnf; full UBI images use /usr/bin/dnf
 aap_ee_builder_package_manager_path: /usr/bin/microdnf
+# OpenShift client tarball (oc adm node-logs); x86_64 stable channel on mirror.openshift.com
+aap_ee_oc_client_download_url: https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/stable/openshift-client-linux.tar.gz
 # Registry host for base image pull; defaults to first segment of aap_ee_base_image (e.g. quay.io)
 aap_ee_base_registry_host: ""
 # Set false if you already ran podman login on the build host
