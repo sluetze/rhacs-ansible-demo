@@ -14,7 +14,7 @@ spec:
       image: "{{ evidence_nginx_image }}"
       imagePullPolicy: IfNotPresent
       ports:
-        - containerPort: {{ evidence_nginx_container_port | default(80) }}
+        - containerPort: {{ evidence_nginx_container_port | default(8080) }}
           protocol: TCP
       volumeMounts:
         - name: evidence

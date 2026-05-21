@@ -315,7 +315,7 @@
         evidence_service_name: "{{ evidence_service_name | default(_rhacs_evidence_publish_id) }}"
         evidence_archive_name: "{{ evidence_archive_name | default('rhacs-evidence-' ~ ansible_date_time.iso8601_basic_short ~ '.zip') }}"
         evidence_nginx_mount_path: "{{ evidence_nginx_mount_path | default('/usr/share/nginx/html') }}"
-        evidence_nginx_container_port: "{{ evidence_nginx_container_port | default(80) }}"
+        evidence_nginx_container_port: "{{ evidence_nginx_container_port | default(8080) }}"
         evidence_nginx_container_name: "{{ evidence_nginx_container_name | default('nginx') }}"
         evidence_service_port: "{{ evidence_service_port | default(8080) }}"
         evidence_create_route: "{{ evidence_create_route | default(true) | bool }}"

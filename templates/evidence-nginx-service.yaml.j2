@@ -14,5 +14,5 @@ spec:
   ports:
     - name: http
       port: {{ evidence_service_port | default(8080) }}
-      targetPort: {{ evidence_nginx_container_port | default(80) }}
+      targetPort: {{ evidence_nginx_container_port | default(8080) }}
       protocol: TCP
