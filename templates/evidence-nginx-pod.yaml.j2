@@ -10,6 +10,17 @@ metadata:
 spec:
   restartPolicy: Never
   containers:
+    # k8s_cp requires tar in the target container; hi/nginx does not ship tar.
+    - name: {{ evidence_stager_container_name | default('evidence-stager') }}
+      image: "{{ evidence_stager_image | default('registry.access.redhat.com/ubi9/ubi-minimal:latest') }}"
+      imagePullPolicy: IfNotPresent
+      command:
+        - /bin/sh
+        - -c
+        - sleep infinity
+      volumeMounts:
+        - name: evidence
+          mountPath: "{{ evidence_nginx_mount_path }}"
     - name: {{ evidence_nginx_container_name | default('nginx') }}
       image: "{{ evidence_nginx_image }}"
       imagePullPolicy: IfNotPresent

@@ -15,6 +15,7 @@
 #   - evidence_publish_enabled: false to skip zip + nginx download pod (tag publish)
 #   - evidence_ir_namespace (default rhacs-incident-response)
 #   - evidence_nginx_image (default registry.access.redhat.com/hi/nginx:latest)
+#   - evidence_stager_image / evidence_stager_container_name (ubi-minimal sidecar; k8s_cp target)
 #
 - name: RHACS incident response — logs, optional checkpoint, NetworkPolicy containment
   hosts: localhost
@@ -317,6 +318,8 @@
         evidence_nginx_mount_path: "{{ evidence_nginx_mount_path | default('/usr/share/nginx/html') }}"
         evidence_nginx_container_port: "{{ evidence_nginx_container_port | default(8080) }}"
         evidence_nginx_container_name: "{{ evidence_nginx_container_name | default('nginx') }}"
+        evidence_stager_container_name: "{{ evidence_stager_container_name | default('evidence-stager') }}"
+        evidence_stager_image: "{{ evidence_stager_image | default('registry.access.redhat.com/ubi9/ubi-minimal:latest') }}"
         evidence_service_port: "{{ evidence_service_port | default(8080) }}"
         evidence_create_route: "{{ evidence_create_route | default(true) | bool }}"
       when: evidence_publish_enabled | default(true) | bool
@@ -360,23 +363,53 @@
         - evidence_pod_status.resources | length > 0
         - evidence_pod_status.resources[0].status.phase == 'Running'
         - evidence_pod_status.resources[0].status.containerStatuses is defined
-        - evidence_pod_status.resources[0].status.containerStatuses | selectattr('ready', 'equalto', true) | list | length > 0
+        - >-
+          (evidence_pod_status.resources[0].status.containerStatuses
+          | selectattr('ready', 'equalto', true) | list | length)
+          == (evidence_pod_status.resources[0].status.containerStatuses | length)
       retries: 24
       delay: 5
       when: evidence_publish_enabled | default(true) | bool
       tags: [publish]
 
-    - name: Copy evidence archive into nginx pod
+    - name: Stat evidence archive on execution host
+      ansible.builtin.stat:
+        path: "{{ evidence_archive_path }}"
+      register: evidence_archive_stat
+      failed_when: >-
+        not evidence_archive_stat.stat.exists
+        or (evidence_archive_stat.stat.size | default(0) | int) < 1
+      when: evidence_publish_enabled | default(true) | bool
+      tags: [publish]
+
+    - name: Copy evidence archive into evidence pod (stager container has tar)
       kubernetes.core.k8s_cp:
         host: "{{ host }}"
         api_key: "{{ bearer_token }}"
         validate_certs: "{{ verify_ssl }}"
         namespace: "{{ evidence_ir_namespace }}"
         pod: "{{ evidence_nginx_pod_name }}"
-        container: "{{ evidence_nginx_container_name }}"
+        container: "{{ evidence_stager_container_name }}"
         local_path: "{{ evidence_archive_path }}"
         remote_path: "{{ evidence_nginx_mount_path }}/{{ evidence_archive_name }}"
         state: to_pod
+      when: evidence_publish_enabled | default(true) | bool
+      tags: [publish]
+
+    - name: Verify evidence archive is present in shared volume
+      kubernetes.core.k8s_exec:
+        host: "{{ host }}"
+        api_key: "{{ bearer_token }}"
+        validate_certs: "{{ verify_ssl }}"
+        namespace: "{{ evidence_ir_namespace }}"
+        pod: "{{ evidence_nginx_pod_name }}"
+        container: "{{ evidence_stager_container_name }}"
+        command: >-
+          /bin/sh -c "test -s {{ evidence_nginx_mount_path }}/{{ evidence_archive_name }}
+          && ls -la {{ evidence_nginx_mount_path }}"
+      register: evidence_copy_verify
+      changed_when: false
+      failed_when: evidence_copy_verify.rc | default(1) | int != 0
       when: evidence_publish_enabled | default(true) | bool
       tags: [publish]
 

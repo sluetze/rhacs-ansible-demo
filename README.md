@@ -111,7 +111,15 @@ Important extra vars:
 
 ### Evidence download (publish phase)
 
-After collection, the playbook creates a pod (same namespace as `rhacs-ir-runner`), copies the zip into the nginx docroot, and prints URLs in the job output. Example cleanup:
+After collection, the playbook creates a pod (same namespace as `rhacs-ir-runner`) with a **ubi-minimal stager** sidecar (has `tar` for `k8s_cp`) and **Hummingbird nginx** sharing an `emptyDir` docroot, copies the zip into the volume, verifies it with `k8s_exec`, and prints URLs in the job output.
+
+To inspect the archive, use the **nginx** container (not `oc debug`, which attaches an ephemeral container with an empty filesystem):
+
+```bash
+oc exec -n rhacs-incident-response POD -c nginx -- ls -la /usr/share/nginx/html
+```
+
+Example cleanup:
 
 ```bash
 oc delete pod,svc,route -n rhacs-incident-response -l app=rhacs-ir-evidence
