@@ -1,26 +1,26 @@
 ---
-# Copy to extra-vars.yml (do not commit) and fill in OCP API + SA token.
-# Example: ansible-playbook playbooks/contain_runtime_violation.yml -e @extra-vars.yml
+# Copy to extra-vars.yml (do not commit). Used for local ansible-playbook runs and as a
+# reference for AAP job template extra variables.
+#
+# Example:
+#   ansible-playbook playbooks/contain_runtime_violation.yml -e @extra-vars.yml
 #
 # host: "https://api.ocp.example.com:6443"
-# bearer_token: "<token from: oc get secret rhacs-ir-runner-token -n rhacs-incident-response -o jsonpath='{.data.token}' | base64 -d>"
-# verify_ssl: true
+# bearer_token: "<rhacs-ir-runner-token>"
+# verify_ssl: false
 #
-# target_namespace: "demo-app"
-# target_pod: "malicious-pod-xxxxx"
-# target_container: "app"
+# target_namespace: demo-app
+# target_pod: malicious-pod-xxxxx
 #
-# Optional:
-# skip_checkpoint: true
-# use_oc_for_node_logs: true   # requires oc CLI on controller where playbook runs
+# Playbook behavior (set these on the AAP job template for EDA-driven runs):
+# enable_checkpoint_collection: false   # default true; set false when CRI-U is off
+# enable_nodelog_collection: true       # default false; requires oc on the execution node
+# evidence_publish_enabled: false
+#
+# Optional tuning:
+# target_container: app
 # networkpolicy_name: rhacs-ir-deny-all
-#
-# Evidence publish (zip + Red Hat Hummingbird nginx download pod in rhacs-incident-response):
-# evidence_publish_enabled: true
-# evidence_publish_enabled: false   # local runs without publish Role applied
-# evidence_nginx_image: registry.access.redhat.com/hi/nginx:latest
-# evidence_stager_image: registry.access.redhat.com/ubi9:latest
-# Inspect files with: oc exec -n rhacs-incident-response POD -c nginx -- ls -la /usr/share/nginx/html
-# (oc debug uses a separate ephemeral container and will not show the copied zip)
+# node_log_tail: 5000
 # evidence_ir_namespace: rhacs-incident-response
+# evidence_nginx_image: registry.access.redhat.com/hi/nginx:latest
 # evidence_create_route: true

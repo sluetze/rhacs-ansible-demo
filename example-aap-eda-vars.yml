@@ -1,59 +1,41 @@
 ---
 # Copy to aap-eda-vars.yml (do not commit) and pass: -e @aap-eda-vars.yml
 #
-# Gateway (AAP 2.5+): single OAuth token for both Controller and EDA API modules
+# Required for configure_aap_eda.yml — connection to AAP (pick one style):
 # aap_gateway_host: "https://security-aap-aap.apps.example.com"
 # aap_oauth_token: "<token from AAP UI → User → Tokens>"
 #
-# Or separate endpoints with username/password (base URL only — do NOT append /api/controller or /api/eda):
+# Or separate Controller / EDA endpoints (base URL only — no /api/controller or /api/eda):
 # aap_controller_host: "https://security-aap-aap.apps.example.com"
 # aap_controller_username: admin
 # aap_controller_password: "change-me"
 # eda_controller_host: "https://security-aap-aap.apps.example.com"
-# eda_username: admin          # optional; defaults to aap_controller_username
-# eda_password: "change-me"    # optional; defaults to aap_controller_password
-#
-# aap_controller_validate_certs: false
-# eda_validate_certs: false
+# eda_username: admin                    # optional; defaults to aap_controller_username
+# eda_password: "change-me"              # optional; defaults to aap_controller_password
 #
 # aap_project_scm_url: "https://github.com/your-org/rhacs-ansible-demo.git"
-# aap_project_scm_branch: main
-# aap_project_scm_update_on_launch: false
-# aap_configure_project_sync_schedule: true
-# aap_project_sync_schedule_name: RHACS Ansible Demo SCM sync
-# aap_project_sync_schedule_rrule: "DTSTART:20200101T000000Z RRULE:FREQ=HOURLY;INTERVAL=1"
 #
+# OpenShift API for the Controller credential (rhacs-ir-runner token):
 # ocp_api: "https://api.cluster.example.com:6443"
 # ocp_token: "<rhacs-ir-runner-token>"
 #
-# Execution environment (ansible-builder build + push + Controller registration):
+# Execution environment — shared registry login (same account for base pull and EE push):
 # aap_ee_image_repository: quay.io/your-user/rhacs-ir-ee
-# aap_ee_image_tag: latest
-# aap_build_execution_environment: true
 # aap_configure_execution_environment: true
-# aap_ee_base_image: quay.io/ansible/ansible-execution-env-base:latest
-# Shared login (when base and push use the same registry and account):
+# aap_build_execution_environment: true
 # aap_ee_registry_username: your-user
 # aap_ee_registry_password: "change-me"
-# Split login when base registry != push registry (example: Red Hat base, Quay push):
+#
+# Split registry login (e.g. Red Hat base image, Quay push):
 # aap_ee_base_image: registry.redhat.io/ansible-automation-platform-26/ee-minimal-rhel9:latest
-# aap_ee_builder_package_manager_path: /usr/bin/microdnf   # use /usr/bin/dnf for full UBI bases
-# aap_ee_base_registry_host: registry.redhat.io
 # aap_ee_base_registry_username: "<redhat-account>"
 # aap_ee_base_registry_password: "<redhat-token>"
 # aap_ee_push_registry_username: your-quay-user
 # aap_ee_push_registry_password: "<quay-token>"
-# aap_ee_registry_login: true             # false if you already ran podman login on this host
-# aap_build_execution_environment: true
-# aap_ee_push_image: true
-# aap_ee_attach_registry_credential: false  # push still uses podman login; only skips AAP pull credential
-# aap_ee_registry_credential_name: RHACS IR EE Registry
-# aap_build_execution_environment: false   # only register image already in registry
 #
-# Username/password overrides from vars/aap_eda_defaults.yml (RHACS → EDA event stream basic auth):
+# RHACS → EDA event stream HTTP basic auth (optional; defaults to controller user/password):
 # eda_event_stream_username: rhacs-webhook
 # eda_event_stream_password: "change-me"
-# If omitted, configure_aap_eda.yml falls back to aap_controller_username / aap_controller_password.
 #
-# eda_rulebook_activation_extra_vars:
-#   webhook_token: "change-me"
+# Playbook behavior (checkpoint, node logs, evidence publish) is set on the AAP job template,
+# not here. See example-extra-vars.yml and README.

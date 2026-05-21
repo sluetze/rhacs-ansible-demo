@@ -5,10 +5,9 @@
 # Configure the RHACS integration "Endpoint" to POST to the activation's webhook URL and
 # optional Bearer token that matches `webhook_token` below.
 #
-# Set environment variables on the activation (or inject via rulebook vars) for:
-#   CONTROLLER_URL, CONTROLLER_USERNAME, CONTROLLER_PASSWORD (or token),
-#   JOB_TEMPLATE_ID or JOB_TEMPLATE_NAME
-#   OCP_API, OCP_TOKEN (passed into the job as extra vars)
+# Activation extra vars (see vars/aap_eda_defaults.yml): job_template_name, aap_organization,
+# webhook_token (embedded webhook only). OpenShift API auth is on the Controller job template credential.
+# Playbook behavior vars (enable_checkpoint_collection, enable_nodelog_collection, etc.) belong on the job template in AAP.
 #
 - name: RHACS policy violation webhook
   hosts: all
@@ -34,10 +33,7 @@
               rhacs_webhook_payload: "{{ event.payload }}"
               target_namespace: "{{ event.payload['alert']['namespace'] }}"
               target_pod: "{{ event.payload['alert']['processViolation']['processes'][0]['podId'] }}"
-              target_cluster: "{{ event.payload['alert']['clusterName'] }}"
-              # OpenShift API auth is supplied by the job template credential (host, bearer_token, verify_ssl)
-              skip_checkpoint: "{{ skip_checkpoint | default(false) }}"
-              use_oc_for_node_logs: "{{ use_oc_for_node_logs | default(false) }}"
+              # OpenShift API auth and playbook behavior (checkpoint, node logs, publish) come from the job template in AAP.
     - name: Debug the event payload
       condition: event.payload is defined
       action:

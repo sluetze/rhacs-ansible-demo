@@ -10,8 +10,8 @@
 #   - networkpolicy_name, policy_name
 #   - evidence_dir (default: ~/rhacs-ir-evidence/<timestamp> on controller)
 #   - host, bearer_token, verify_ssl (from Controller OpenShift/K8s credential; legacy ocp_* aliases)
-#   - skip_checkpoint: true to skip kubelet checkpoint call
-#   - use_oc_for_node_logs: true uses oc adm node-logs (default false for AAP without oc CLI)
+#   - enable_checkpoint_collection: false to skip kubelet checkpoint (default true)
+#   - enable_nodelog_collection: true runs oc adm node-logs (default false; requires oc on controller)
 #   - evidence_publish_enabled: false to skip zip + nginx download pod (tag publish)
 #   - evidence_ir_namespace (default rhacs-incident-response)
 #   - evidence_nginx_image (default registry.access.redhat.com/hi/nginx:latest)
@@ -232,7 +232,7 @@
           }}
       register: node_logs_kubelet
       changed_when: false
-      when: use_oc_for_node_logs | default(false) | bool
+      when: enable_nodelog_collection | default(false) | bool
       no_log: true
       tags: [logs]
 
@@ -247,7 +247,7 @@
           }}
       register: node_logs_crio
       changed_when: false
-      when: use_oc_for_node_logs | default(false) | bool
+      when: enable_nodelog_collection | default(false) | bool
       no_log: true
       tags: [logs]
 
@@ -256,7 +256,7 @@
         dest: "{{ evidence_dir }}/node-{{ target_node }}-kubelet.log"
         mode: "0600"
         content: "{{ node_logs_kubelet.stdout }}"
-      when: use_oc_for_node_logs | default(false) | bool and node_logs_kubelet is not failed
+      when: enable_nodelog_collection | default(false) | bool and node_logs_kubelet is not failed
       tags: [logs]
 
     - name: Write crio node logs
@@ -264,11 +264,11 @@
         dest: "{{ evidence_dir }}/node-{{ target_node }}-crio.log"
         mode: "0600"
         content: "{{ node_logs_crio.stdout }}"
-      when: use_oc_for_node_logs | default(false) | bool and node_logs_crio is not failed
+      when: enable_nodelog_collection | default(false) | bool and node_logs_crio is not failed
       tags: [logs]
 
     - name: Trigger kubelet forensic checkpoint (POST node proxy)
-      when: not (skip_checkpoint | default(false) | bool)
+      when: enable_checkpoint_collection | default(true) | bool
       ansible.builtin.uri:
         url: >-
           {{ host }}/api/v1/nodes/{{ target_node }}/proxy/checkpoint/{{
@@ -290,7 +290,7 @@
         dest: "{{ evidence_dir }}/checkpoint-response.json"
         mode: "0600"
         content: "{{ checkpoint_response | to_nice_json }}"
-      when: not (skip_checkpoint | default(false) | bool) and checkpoint_response is defined
+      when: enable_checkpoint_collection | default(true) | bool and checkpoint_response is defined
       tags: [checkpoint]
 
     - name: Note checkpoint failure (check CRI-O CRIU / permissions)
@@ -300,7 +300,7 @@
           see {{ evidence_dir }}/checkpoint-response.json.
           If 403/404, confirm RBAC nodes/proxy CREATE and CRIU enablement on workers.
       when:
-        - not (skip_checkpoint | default(false) | bool)
+        - enable_checkpoint_collection | default(true) | bool
         - checkpoint_response.status | default(200) not in [200, 201, 202]
       tags: [checkpoint]
 

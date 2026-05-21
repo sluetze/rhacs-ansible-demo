@@ -85,8 +85,8 @@ ansible-playbook playbooks/contain_runtime_violation.yml \
   -e verify_ssl=false \
   -e target_namespace=myapp \
   -e target_pod=my-pod-xxx \
-  -e use_oc_for_node_logs=true \
-  -e skip_checkpoint=true
+  -e enable_nodelog_collection=true \
+  -e enable_checkpoint_collection=false
 ```
 
 Artifacts land under `$HOME/rhacs-ir-evidence/<timestamp>/` unless you set `evidence_dir`.
@@ -100,8 +100,8 @@ Important extra vars:
 | `host` | Kubernetes API URL (from Controller **OpenShift or Kubernetes API Bearer Token** credential) |
 | `bearer_token` | Bearer token for `rhacs-ir-runner` (same credential) |
 | `verify_ssl` | `true`/`false` from credential; use `false` only with care in internal labs |
-| `skip_checkpoint` | `true` to skip `POST .../proxy/checkpoint/...` (e.g. CRI-U off) |
-| `use_oc_for_node_logs` | `true` to run `oc adm node-logs` on the controller (requires `oc`; adds `--tail` to bound volume) |
+| `enable_checkpoint_collection` | `true` (default) runs `POST .../proxy/checkpoint/...`; set `false` when CRI-U is off |
+| `enable_nodelog_collection` | `true` runs `oc adm node-logs` on the execution node (requires `oc`; uses `node_log_tail`) |
 | `node_log_tail` | Max lines per node unit (default `5000`) |
 | `rhacs_webhook_payload` | Entire JSON body from RHACS; playbook maps `alert.deployment.namespace`, `alert.pod` / `alert.pod.name`, `alert.policy.name` when possible |
 | `evidence_publish_enabled` | `true` (default) zip evidence and expose nginx download pod; `false` to collect only |
@@ -158,6 +158,8 @@ ansible-playbook playbooks/configure_aap_eda.yml \
 ```
 
 Use tags to run only one side: `--tags controller` or `--tags eda`. Defaults live in [vars/aap_eda_defaults.yml](vars/aap_eda_defaults.yml); set `eda_use_event_stream: false` to use the rulebook’s embedded webhook instead of an EDA event stream (matches [event.json](event.json) when RHACS posts to `RHACS-OCP-Forensics`).
+
+**Job template extra variables** (checkpoint, node logs, evidence publish) are **not** set in this repository. Configure them on the AAP job template **Extra Variables** (see [example-extra-vars.yml](example-extra-vars.yml)). Typical demo values: `enable_checkpoint_collection: false`, `enable_nodelog_collection: false`.
 
 The Controller project is **not** synced during `configure_aap_eda.yml` (no `update_project` on create). SCM updates run on an **hourly schedule** (`aap_project_sync_schedule_*` vars) instead of **Update revision on launch** (`aap_project_scm_update_on_launch`, default `false`). Trigger a one-off sync in the UI if you need playbooks before the first scheduled run.
 
@@ -234,7 +236,7 @@ Skip image build and only register an existing image: `-e aap_build_execution_en
 3. Create a **Red Hat Ansible Automation Platform** credential on EDA pointing at `https://<aap-host>/api/controller/` with Controller user/password or token.
 4. Use a **Decision Environment** image with **ansible-rulebook** and **ansible.eda** (e.g. `quay.io/ansible/ansible-rulebook:latest`).
 5. Create a **Job Template** for `playbooks/contain_runtime_violation.yml` and attach an **OpenShift or Kubernetes API Bearer Token** credential (`host`, `bearer_token`, `verify_ssl`).
-6. Create a **Rulebook Activation** from `rulebooks/rhacs_webhook.yml`; bind the **RHACS-OCP-Forensics** event stream (or rely on the rulebook webhook) and set `webhook_token` and job template name in activation extra vars.
+6. Create a **Rulebook Activation** from `rulebooks/rhacs_webhook.yml`; bind the **RHACS-OCP-Forensics** event stream (or rely on the rulebook webhook). Set `webhook_token` on the activation only when using the embedded webhook. Set playbook behavior on the **job template** extra vars, not on the rulebook.
 
 Adjust the rulebook `condition:` if your RHACS JSON nests fields differently—capture one real POST and align keys.
 

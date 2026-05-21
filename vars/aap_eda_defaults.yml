@@ -54,14 +54,10 @@ aap_ee_push_registry_password: ""
 aap_ee_registry_credential_name: RHACS IR EE Registry
 # Create Controller registry pull secret for the EE (set false to skip AAP credential; podman push login still runs)
 aap_ee_attach_registry_credential: true
-# Deprecated: aap_configure_ee_registry_credential — use aap_ee_attach_registry_credential instead
 # Push destination host; defaults to first segment of aap_ee_image_repository (e.g. quay.io)
 aap_ee_registry_host: ""
-aap_job_template_extra_vars:
-  skip_checkpoint: true
-  use_oc_for_node_logs: false
-  evidence_publish_enabled: true
-  evidence_nginx_image: registry.access.redhat.com/hi/nginx:latest
+# Job-template extra vars are configured in AAP (not in this repo). See example-extra-vars.yml.
+aap_job_template_extra_vars: {}
 
 # OpenShift API credential on Controller (injects host, bearer_token, verify_ssl into job runs)
 aap_configure_ocp_credential: true
@@ -91,8 +87,6 @@ eda_rulebook_activation_extra_vars:
   aap_organization: "{{ aap_organization }}"
   webhook_token: change-me
   webhook_port: 5000
-  skip_checkpoint: true
-  use_oc_for_node_logs: false
 
 eda_aap_credential_name: RHACS EDA to Controller
 eda_aap_credential_type: "Red Hat Ansible Automation Platform"
