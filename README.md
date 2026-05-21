@@ -42,6 +42,12 @@ oc auth can-i create pods -n rhacs-incident-response \
 
 oc auth can-i create routes -n rhacs-incident-response \
   --as=system:serviceaccount:rhacs-incident-response:rhacs-ir-runner
+
+oc auth can-i get pods/exec -n rhacs-incident-response \
+  --as=system:serviceaccount:rhacs-incident-response:rhacs-ir-runner
+
+oc auth can-i create pods/exec -n rhacs-incident-response \
+  --as=system:serviceaccount:rhacs-incident-response:rhacs-ir-runner
 ```
 
 RBAC is split by scope:
