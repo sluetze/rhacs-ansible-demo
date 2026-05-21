@@ -85,7 +85,6 @@ ansible-playbook playbooks/contain_runtime_violation.yml \
   -e verify_ssl=false \
   -e target_namespace=myapp \
   -e target_pod=my-pod-xxx \
-  -e enable_nodelog_collection=true \
   -e enable_checkpoint_collection=false
 ```
 
@@ -101,7 +100,7 @@ Important extra vars:
 | `bearer_token` | Bearer token for `rhacs-ir-runner` (same credential) |
 | `verify_ssl` | `true`/`false` from credential; use `false` only with care in internal labs |
 | `enable_checkpoint_collection` | `true` (default) runs `POST .../proxy/checkpoint/...`; set `false` when CRI-U is off |
-| `enable_nodelog_collection` | `true` runs `oc adm node-logs` on the execution node (requires `oc`; uses `node_log_tail`) |
+| `enable_nodelog_collection` | `true` (default) runs `oc adm node-logs` via the EE `openshift-clients` package; set `false` to skip |
 | `node_log_tail` | Max lines per node unit (default `5000`) |
 | `rhacs_webhook_payload` | Entire JSON body from RHACS; playbook maps `alert.deployment.namespace`, `alert.pod` / `alert.pod.name`, `alert.policy.name` when possible |
 | `evidence_publish_enabled` | `true` (default) zip evidence and expose nginx download pod; `false` to collect only |
@@ -159,13 +158,13 @@ ansible-playbook playbooks/configure_aap_eda.yml \
 
 Use tags to run only one side: `--tags controller` or `--tags eda`. Defaults live in [vars/aap_eda_defaults.yml](vars/aap_eda_defaults.yml); set `eda_use_event_stream: false` to use the rulebook’s embedded webhook instead of an EDA event stream (matches [event.json](event.json) when RHACS posts to `RHACS-OCP-Forensics`).
 
-**Job template extra variables** (checkpoint, node logs, evidence publish) are **not** set in this repository. Configure them on the AAP job template **Extra Variables** (see [example-extra-vars.yml](example-extra-vars.yml)). Typical demo values: `enable_checkpoint_collection: false`, `enable_nodelog_collection: false`.
+**Job template extra variables** (checkpoint, node logs, evidence publish) are **not** set in this repository. Configure them on the AAP job template **Extra Variables** (see [example-extra-vars.yml](example-extra-vars.yml)). Node logs are on by default once you use the RHACS IR execution environment (includes `oc`). Typical demo override: `enable_checkpoint_collection: false`.
 
 The Controller project is **not** synced during `configure_aap_eda.yml` (no `update_project` on create). SCM updates run on an **hourly schedule** (`aap_project_sync_schedule_*` vars) instead of **Update revision on launch** (`aap_project_scm_update_on_launch`, default `false`). Trigger a one-off sync in the UI if you need playbooks before the first scheduled run.
 
 ### Execution environment build and upload
 
-`configure_aap_eda.yml` can **build**, **push**, and **register** a Controller execution environment that installs every collection in [collections/requirements.yml](collections/requirements.yml) plus Python deps from [requirements.txt](requirements.txt).
+`configure_aap_eda.yml` can **build**, **push**, and **register** a Controller execution environment that installs every collection in [collections/requirements.yml](collections/requirements.yml), Python deps from [requirements.txt](requirements.txt), and system packages from [bindep.txt](bindep.txt) (including **openshift-clients** for `oc adm node-logs`).
 
 The build uses the **supported Ansible EE base** `quay.io/ansible/ansible-execution-env-base:latest` (see [templates/execution-environment.yml.j2](templates/execution-environment.yml.j2)). That image is **not anonymous** — you must authenticate to the registry before `ansible-builder` can pull it.
 

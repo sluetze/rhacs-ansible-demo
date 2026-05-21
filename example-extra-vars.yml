@@ -14,7 +14,7 @@
 #
 # Playbook behavior (set these on the AAP job template for EDA-driven runs):
 # enable_checkpoint_collection: false   # default true; set false when CRI-U is off
-# enable_nodelog_collection: true       # default false; requires oc on the execution node
+# enable_nodelog_collection: false      # default true; RHACS IR EE installs openshift-clients (oc)
 # evidence_publish_enabled: false
 #
 # Optional tuning:

@@ -1,3 +1,5 @@
-# System packages for community.general.archive (zip) inside the EE.
+# System packages for the RHACS IR execution environment.
 zip [platform:rpm]
 unzip [platform:rpm]
+# oc CLI for enable_nodelog_collection (oc adm node-logs)
+openshift-clients [platform:rpm]

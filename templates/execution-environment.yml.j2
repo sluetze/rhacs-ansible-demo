@@ -20,10 +20,8 @@ dependencies:
   galaxy: ../collections/requirements.yml
   python: ../requirements.txt
   system: ../bindep.txt
-  # Only install zip/unzip from bindep.txt — skip collection system deps (e.g. openshift-clients)
+  # Skip collection-pulled system deps; openshift-clients comes from bindep.txt (oc for node logs)
   exclude:
-    system:
-      - openshift-clients
     all_from_collections:
       - kubernetes.core
       - community.general
