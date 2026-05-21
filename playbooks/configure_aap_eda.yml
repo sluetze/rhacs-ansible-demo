@@ -154,9 +154,18 @@
         scm_url: "{{ aap_project_scm_url }}"
         scm_branch: "{{ aap_project_scm_branch }}"
         scm_update_on_launch: "{{ aap_project_scm_update_on_launch | bool }}"
-        update_project: true
-        wait: true
-      register: aap_project
+      tags: [controller]
+
+    - name: Schedule Controller project SCM sync
+      when: aap_configure_project_sync_schedule | bool
+      awx.awx.schedule:
+        name: "{{ aap_project_sync_schedule_name }}"
+        description: Periodic SCM sync for {{ aap_project_name }}
+        organization: "{{ aap_organization }}"
+        unified_job_template: "{{ aap_project_name }}"
+        enabled: "{{ aap_project_sync_schedule_enabled | bool }}"
+        rrule: "{{ aap_project_sync_schedule_rrule }}"
+      tags: [controller]
 
     - name: Require ocp_api and ocp_token when configuring OCP credential
       when: aap_configure_ocp_credential | bool

@@ -18,6 +18,10 @@
 #
 # aap_project_scm_url: "https://github.com/your-org/rhacs-ansible-demo.git"
 # aap_project_scm_branch: main
+# aap_project_scm_update_on_launch: false
+# aap_configure_project_sync_schedule: true
+# aap_project_sync_schedule_name: RHACS Ansible Demo SCM sync
+# aap_project_sync_schedule_rrule: "DTSTART:20200101T000000Z RRULE:FREQ=HOURLY;INTERVAL=1"
 #
 # ocp_api: "https://api.cluster.example.com:6443"
 # ocp_token: "<rhacs-ir-runner-token>"

@@ -145,6 +145,8 @@ ansible-playbook playbooks/configure_aap_eda.yml \
 
 Use tags to run only one side: `--tags controller` or `--tags eda`. Defaults live in [vars/aap_eda_defaults.yml](vars/aap_eda_defaults.yml); set `eda_use_event_stream: false` to use the rulebook’s embedded webhook instead of an EDA event stream (matches [event.json](event.json) when RHACS posts to `RHACS-OCP-Forensics`).
 
+The Controller project is **not** synced during `configure_aap_eda.yml` (no `update_project` on create). SCM updates run on an **hourly schedule** (`aap_project_sync_schedule_*` vars) instead of **Update revision on launch** (`aap_project_scm_update_on_launch`, default `false`). Trigger a one-off sync in the UI if you need playbooks before the first scheduled run.
+
 ### Execution environment build and upload
 
 `configure_aap_eda.yml` can **build**, **push**, and **register** a Controller execution environment that installs every collection in [collections/requirements.yml](collections/requirements.yml) plus Python deps from [requirements.txt](requirements.txt).

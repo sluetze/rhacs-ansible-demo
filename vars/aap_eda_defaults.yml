@@ -7,7 +7,13 @@ aap_organization: Default
 aap_project_name: RHACS Ansible Demo
 aap_project_scm_url: "https://github.com/your-org/rhacs-ansible-demo.git"
 aap_project_scm_branch: main
-aap_project_scm_update_on_launch: true
+# Sync on each job launch is disabled; use the project sync schedule instead
+aap_project_scm_update_on_launch: false
+aap_configure_project_sync_schedule: true
+aap_project_sync_schedule_name: RHACS Ansible Demo SCM sync
+aap_project_sync_schedule_enabled: true
+# Hourly SCM sync (UTC). Override in aap-eda-vars.yml or use awx.awx.schedule_rrule in the playbook.
+aap_project_sync_schedule_rrule: "DTSTART:20200101T000000Z RRULE:FREQ=HOURLY;INTERVAL=1"
 
 # Automation Controller job
 aap_job_template_name: RHACS Contain Runtime Violation
