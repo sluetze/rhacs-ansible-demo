@@ -6,7 +6,7 @@
 #   - target_namespace
 #   - target_pod
 # Optional:
-#   - target_container (defaults to first container in pod)
+#   - target_container (defaults to first container; used for kubelet checkpoint only; logs collected for every container)
 #   - networkpolicy_name, policy_name
 #   - evidence_dir (default: ~/rhacs-ir-evidence/<timestamp> on controller)
 #   - host, bearer_token, verify_ssl (from Controller OpenShift/K8s credential; legacy ocp_* aliases)
@@ -133,6 +133,13 @@
       ansible.builtin.set_fact:
         pod_obj: "{{ pod_query.resources[0] }}"
         target_node: "{{ pod_query.resources[0].spec.nodeName }}"
+        _pod_container_names: >-
+          {{
+            (
+              (pod_query.resources[0].spec.containers | default([]) | map(attribute='name') | list)
+              + (pod_query.resources[0].spec.initContainers | default([]) | map(attribute='name') | list)
+            ) | unique | list
+          }}
         target_container: "{{ target_container
           | default((pod_query.resources[0].spec.containers | first).name) }}"
 
@@ -168,15 +175,24 @@
         validate_certs: "{{ verify_ssl }}"
         namespace: "{{ target_namespace }}"
         name: "{{ target_pod }}"
-        container: "{{ target_container }}"
-      register: pod_logs
+        container: "{{ item }}"
+      loop: "{{ _pod_container_names }}"
+      loop_control:
+        label: "{{ item }}"
+      register: pod_logs_per_container
+      ignore_errors: true
       tags: [logs]
 
     - name: Write container logs to evidence
       ansible.builtin.copy:
-        dest: "{{ evidence_dir }}/pod-{{ target_pod }}-{{ target_container }}.log"
+        dest: "{{ evidence_dir }}/pod-{{ target_pod }}-{{ item.item }}.log"
         mode: "0600"
-        content: "{{ pod_logs.log }}"
+        content: "{{ item.log }}"
+      loop: "{{ pod_logs_per_container.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: item.log is defined
+      tags: [logs]
 
     - name: Try previous-instance container logs
       kubernetes.core.k8s_log:
@@ -185,18 +201,24 @@
         validate_certs: "{{ verify_ssl }}"
         namespace: "{{ target_namespace }}"
         name: "{{ target_pod }}"
-        container: "{{ target_container }}"
+        container: "{{ item }}"
         previous: true
-      register: pod_logs_prev
+      loop: "{{ _pod_container_names }}"
+      loop_control:
+        label: "{{ item }}"
+      register: pod_logs_prev_per_container
       ignore_errors: true
       tags: [logs]
 
     - name: Write previous logs if present
       ansible.builtin.copy:
-        dest: "{{ evidence_dir }}/pod-{{ target_pod }}-{{ target_container }}-previous.log"
+        dest: "{{ evidence_dir }}/pod-{{ target_pod }}-{{ item.item }}-previous.log"
         mode: "0600"
-        content: "{{ pod_logs_prev.log }}"
-      when: pod_logs_prev.log is defined and (pod_logs_prev.log | length) > 0
+        content: "{{ item.log }}"
+      loop: "{{ pod_logs_prev_per_container.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: item.log is defined and (item.log | length) > 0
       tags: [logs]
 
     - name: Capture kubelet unit logs from node (oc)
