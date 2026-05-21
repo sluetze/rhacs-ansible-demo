@@ -15,7 +15,7 @@
 #   - evidence_publish_enabled: false to skip zip + nginx download pod (tag publish)
 #   - evidence_ir_namespace (default rhacs-incident-response)
 #   - evidence_nginx_image (default registry.access.redhat.com/hi/nginx:latest)
-#   - evidence_stager_image / evidence_stager_container_name (ubi-minimal sidecar; k8s_cp target)
+#   - evidence_stager_image / evidence_stager_container_name (ubi9 sidecar with tar; k8s_cp target)
 #
 - name: RHACS incident response — logs, optional checkpoint, NetworkPolicy containment
   hosts: localhost
@@ -319,7 +319,7 @@
         evidence_nginx_container_port: "{{ evidence_nginx_container_port | default(8080) }}"
         evidence_nginx_container_name: "{{ evidence_nginx_container_name | default('nginx') }}"
         evidence_stager_container_name: "{{ evidence_stager_container_name | default('evidence-stager') }}"
-        evidence_stager_image: "{{ evidence_stager_image | default('registry.access.redhat.com/ubi9/ubi-minimal:latest') }}"
+        evidence_stager_image: "{{ evidence_stager_image | default('registry.access.redhat.com/ubi9:latest') }}"
         evidence_service_port: "{{ evidence_service_port | default(8080) }}"
         evidence_create_route: "{{ evidence_create_route | default(true) | bool }}"
       when: evidence_publish_enabled | default(true) | bool

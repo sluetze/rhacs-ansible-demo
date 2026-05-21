@@ -12,7 +12,7 @@ spec:
   containers:
     # k8s_cp requires tar in the target container; hi/nginx does not ship tar.
     - name: {{ evidence_stager_container_name | default('evidence-stager') }}
-      image: "{{ evidence_stager_image | default('registry.access.redhat.com/ubi9/ubi-minimal:latest') }}"
+      image: "{{ evidence_stager_image | default('registry.access.redhat.com/ubi9:latest') }}"
       imagePullPolicy: IfNotPresent
       command:
         - /bin/sh

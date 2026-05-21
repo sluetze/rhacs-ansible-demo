@@ -111,7 +111,7 @@ Important extra vars:
 
 ### Evidence download (publish phase)
 
-After collection, the playbook creates a pod (same namespace as `rhacs-ir-runner`) with a **ubi-minimal stager** sidecar (has `tar` for `k8s_cp`) and **Hummingbird nginx** sharing an `emptyDir` docroot, copies the zip into the volume, verifies it with `k8s_exec`, and prints URLs in the job output.
+After collection, the playbook creates a pod (same namespace as `rhacs-ir-runner`) with a **ubi9 stager** sidecar (`registry.access.redhat.com/ubi9:latest` includes `tar` for `k8s_cp`; do not use `ubi-minimal`) and **Hummingbird nginx** sharing an `emptyDir` docroot, copies the zip into the volume, verifies it with `k8s_exec`, and prints URLs in the job output.
 
 To inspect the archive, use the **nginx** container (not `oc debug`, which attaches an ephemeral container with an empty filesystem):
 

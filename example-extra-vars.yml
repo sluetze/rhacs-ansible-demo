@@ -19,7 +19,7 @@
 # evidence_publish_enabled: true
 # evidence_publish_enabled: false   # local runs without publish Role applied
 # evidence_nginx_image: registry.access.redhat.com/hi/nginx:latest
-# evidence_stager_image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+# evidence_stager_image: registry.access.redhat.com/ubi9:latest
 # Inspect files with: oc exec -n rhacs-incident-response POD -c nginx -- ls -la /usr/share/nginx/html
 # (oc debug uses a separate ephemeral container and will not show the copied zip)
 # evidence_ir_namespace: rhacs-incident-response
