@@ -46,8 +46,9 @@ aap_ee_push_registry_username: ""
 aap_ee_push_registry_password: ""
 # Controller credential for AAP to pull the pushed EE image (uses push registry auth)
 aap_ee_registry_credential_name: RHACS IR EE Registry
-# Create Controller registry pull secret for the EE (set false to push without an AAP credential)
+# Create Controller registry pull secret for the EE (set false to skip AAP credential; podman push login still runs)
 aap_ee_attach_registry_credential: true
+# Deprecated: aap_configure_ee_registry_credential — use aap_ee_attach_registry_credential instead
 # Push destination host; defaults to first segment of aap_ee_image_repository (e.g. quay.io)
 aap_ee_registry_host: ""
 aap_job_template_extra_vars:

@@ -48,6 +48,21 @@
         | default(aap_ee_base_image.split('/')[0], true)
       }}
     _aap_ee_definition_path: "{{ _aap_repo_root }}/{{ aap_ee_definition_rendered }}"
+    _aap_ee_image_repository_valid: >-
+      {{
+        (aap_ee_image_repository | default('', true) | length > 0)
+        and (aap_ee_image_repository | default('', true) != 'quay.io/your-org/rhacs-ir-ee')
+      }}
+    _aap_ee_register_on_controller: >-
+      {{
+        (aap_configure_execution_environment | default(false) | bool)
+        or (_aap_ee_image_repository_valid | bool)
+      }}
+    _aap_ee_build_effective: >-
+      {{
+        (aap_build_execution_environment | default(false) | bool)
+        and (_aap_ee_image_repository_valid | bool)
+      }}
     # Base vs push registry auth (unset aap_ee_*_registry_* falls back to shared aap_ee_registry_username/password)
     _aap_ee_base_registry_username: >-
       {{
@@ -75,10 +90,29 @@
         or (_aap_ee_push_registry_username != _aap_ee_base_registry_username)
         or (_aap_ee_push_registry_password != _aap_ee_base_registry_password)
       }}
+    # Deprecated alias aap_configure_ee_registry_credential wins when set via -e (defaults only define attach)
+    _aap_ee_attach_registry_credential_effective: >-
+      {{
+        (
+          aap_configure_ee_registry_credential
+          if (aap_configure_ee_registry_credential is defined)
+          else (aap_ee_attach_registry_credential | default(true))
+        ) | bool
+      }}
+    # podman/docker login before push — never tied to Controller credential creation
+    _aap_ee_push_registry_login: >-
+      {{
+        (_aap_ee_build_effective | bool)
+        and (aap_ee_push_image | default(true) | bool)
+        and (aap_ee_registry_login | default(true) | bool)
+        and (_aap_ee_registry_host | length > 0)
+        and (_aap_ee_push_registry_username | length > 0)
+        and (_aap_ee_push_registry_password | length > 0)
+      }}
     # Create on Controller + attach to EE when push registry auth is configured
     _aap_ee_use_registry_credential: >-
       {{
-        (aap_ee_attach_registry_credential | default(true) | bool)
+        (_aap_ee_attach_registry_credential_effective | bool)
         and (aap_ee_registry_credential_name | length > 0)
         and (_aap_ee_registry_host | length > 0)
         and (_aap_ee_push_registry_username | length > 0)
@@ -146,7 +180,7 @@
           verify_ssl: "{{ ocp_verify_ssl | default(false) | bool }}"
 
     - name: Require execution environment image repository
-      when: aap_configure_execution_environment | bool or aap_build_execution_environment | bool
+      when: _aap_ee_register_on_controller | bool or _aap_ee_build_effective | bool
       tags: [execution_environment, controller]
       ansible.builtin.assert:
         that:
@@ -159,7 +193,7 @@
           documentation placeholder quay.io/your-org/rhacs-ir-ee.
 
     - name: Check ansible-builder is available
-      when: aap_build_execution_environment | bool
+      when: _aap_ee_build_effective | bool
       tags: [execution_environment, controller]
       ansible.builtin.command:
         cmd: "{{ aap_ee_builder_bin }} --version"
@@ -167,7 +201,7 @@
       changed_when: false
 
     - name: Check container CLI is available
-      when: aap_build_execution_environment | bool
+      when: _aap_ee_build_effective | bool
       tags: [execution_environment, controller]
       ansible.builtin.command:
         cmd: "{{ aap_ee_container_cli }} --version"
@@ -176,7 +210,7 @@
 
     - name: Require base registry credentials when automated EE login is enabled
       when:
-        - aap_build_execution_environment | bool
+        - _aap_ee_build_effective | bool
         - aap_ee_registry_login | default(true) | bool
       tags: [execution_environment, controller]
       ansible.builtin.assert:
@@ -189,10 +223,7 @@
           {{ _aap_ee_base_registry_host }}, or pass -e aap_ee_registry_login=false after manual login.
 
     - name: Require push registry credentials when push and automated login are enabled
-      when:
-        - aap_build_execution_environment | bool
-        - aap_ee_push_image | bool
-        - aap_ee_registry_login | default(true) | bool
+      when: _aap_ee_push_registry_login | bool
       tags: [execution_environment, controller]
       ansible.builtin.assert:
         that:
@@ -204,7 +235,7 @@
           {{ _aap_ee_registry_host }}, or pass -e aap_ee_registry_login=false after manual login.
 
     - name: Ensure EE build output directory exists
-      when: aap_build_execution_environment | bool
+      when: _aap_ee_build_effective | bool
       ansible.builtin.file:
         path: "{{ _aap_repo_root }}/.build"
         state: directory
@@ -212,7 +243,7 @@
       tags: [execution_environment, controller]
 
     - name: Render execution-environment definition for ansible-builder
-      when: aap_build_execution_environment | bool
+      when: _aap_ee_build_effective | bool
       ansible.builtin.template:
         src: "{{ playbook_dir }}/../templates/execution-environment.yml.j2"
         dest: "{{ _aap_ee_definition_path }}"
@@ -221,7 +252,7 @@
 
     - name: Log in to base image registry for EE build
       when:
-        - aap_build_execution_environment | bool
+        - _aap_ee_build_effective | bool
         - aap_ee_registry_login | default(true) | bool
         - _aap_ee_base_registry_host | length > 0
         - _aap_ee_base_registry_username | length > 0
@@ -237,7 +268,7 @@
 
     - name: Note when base and push registry logins differ
       when:
-        - aap_build_execution_environment | bool
+        - _aap_ee_build_effective | bool
         - aap_ee_registry_login | default(true) | bool
         - _aap_ee_registries_differ | bool
       ansible.builtin.debug:
@@ -248,7 +279,7 @@
       tags: [execution_environment, controller]
 
     - name: Build execution environment image
-      when: aap_build_execution_environment | bool
+      when: _aap_ee_build_effective | bool
       tags: [execution_environment, controller]
       ansible.builtin.command:
         argv:
@@ -265,15 +296,8 @@
       changed_when: _aap_ee_build.rc == 0
 
     - name: Log in to push registry for EE image upload
-      # Independent of aap_ee_attach_registry_credential (Controller pull secret only).
-      # Always runs before push when push credentials are set, even if base registry/host match.
-      when:
-        - aap_build_execution_environment | bool
-        - aap_ee_push_image | bool
-        - aap_ee_registry_login | default(true) | bool
-        - _aap_ee_registry_host | length > 0
-        - _aap_ee_push_registry_username | length > 0
-        - _aap_ee_push_registry_password | length > 0
+      # Uses _aap_ee_push_registry_login — not aap_ee_attach_registry_credential / _aap_ee_use_registry_credential.
+      when: _aap_ee_push_registry_login | bool
       ansible.builtin.shell:
         cmd: >-
           {{ aap_ee_container_cli }} login {{ _aap_ee_registry_host }}
@@ -285,7 +309,7 @@
 
     - name: Push execution environment image to registry
       when:
-        - aap_build_execution_environment | bool
+        - _aap_ee_build_effective | bool
         - aap_ee_push_image | bool
       ansible.builtin.command:
         argv:
@@ -312,7 +336,7 @@
 
     - name: Register execution environment on Controller (with registry credential)
       when:
-        - aap_configure_execution_environment | bool
+        - _aap_ee_register_on_controller | bool
         - _aap_ee_use_registry_credential | bool
       awx.awx.execution_environment:
         name: "{{ aap_execution_environment_name }}"
@@ -327,7 +351,7 @@
 
     - name: Register execution environment on Controller (no registry credential)
       when:
-        - aap_configure_execution_environment | bool
+        - _aap_ee_register_on_controller | bool
         - not (_aap_ee_use_registry_credential | bool)
       awx.awx.execution_environment:
         name: "{{ aap_execution_environment_name }}"
@@ -340,14 +364,15 @@
       tags: [execution_environment, controller]
 
     - name: Show execution environment image
-      when: aap_configure_execution_environment | bool
+      when: _aap_ee_register_on_controller | bool
       ansible.builtin.debug:
         msg: >-
           Job template {{ aap_job_template_name }} uses execution environment
           {{ aap_execution_environment_name }} (image {{ _aap_ee_image }}).
       tags: [execution_environment, controller]
 
-    - name: Create incident response job template
+    - name: Create incident response job template (custom execution environment)
+      when: _aap_ee_register_on_controller | bool
       awx.awx.job_template:
         name: "{{ aap_job_template_name }}"
         description: RHACS runtime violation — logs, checkpoint, NetworkPolicy
@@ -356,6 +381,19 @@
         playbook: "{{ aap_job_template_playbook }}"
         inventory: "{{ aap_job_template_inventory }}"
         execution_environment: "{{ aap_execution_environment_name }}"
+        extra_vars: "{{ _job_template_extra_vars }}"
+        ask_variables_on_launch: true
+        job_type: run
+
+    - name: Create incident response job template (platform default execution environment)
+      when: not (_aap_ee_register_on_controller | bool)
+      awx.awx.job_template:
+        name: "{{ aap_job_template_name }}"
+        description: RHACS runtime violation — logs, checkpoint, NetworkPolicy
+        organization: "{{ aap_organization }}"
+        project: "{{ aap_project_name }}"
+        playbook: "{{ aap_job_template_playbook }}"
+        inventory: "{{ aap_job_template_inventory }}"
         extra_vars: "{{ _job_template_extra_vars }}"
         ask_variables_on_launch: true
         job_type: run
