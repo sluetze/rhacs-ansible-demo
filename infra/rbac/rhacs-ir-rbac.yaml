@@ -31,6 +31,10 @@ rules:
   - apiGroups: [""]
     resources: ["nodes/proxy"]
     verbs: ["get", "create", "update", "patch"]
+  # OpenShift 4.17+ maps POST .../proxy/checkpoint/... to nodes/checkpoint (not nodes/proxy).
+  - apiGroups: [""]
+    resources: ["nodes/checkpoint"]
+    verbs: ["get", "create"]
   - apiGroups: [""]
     resources: ["nodes/log"]
     verbs: ["get"]

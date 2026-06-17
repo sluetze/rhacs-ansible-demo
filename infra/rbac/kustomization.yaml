@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - rhacs-ir-rbac.yaml
   - rhacs-ir-publish-rbac.yaml
+  - kube-apiserver-checkpoints.yaml
