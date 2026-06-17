@@ -1,0 +1,60 @@
+---
+description: Test playbook changes locally with ansible-navigator before AAP
+alwaysApply: true
+---
+
+# Local testing with ansible-navigator
+
+Before marking playbook work complete, **run it locally with `ansible-navigator`** (not bare `ansible-playbook`) so the run matches the AAP execution environment.
+
+## Setup
+
+```bash
+source .venv/bin/activate
+ansible-galaxy collection install -r collections/requirements.yml -p collections
+cp example-extra-vars.yml extra-vars.yml   # edit host, bearer_token, targets
+```
+
+## Run playbooks
+
+Use the RHACS IR EE image (same collections and `kubernetes<36` pin as Controller):
+
+```bash
+source .env   # sets K8S_AUTH_HOST and refreshes K8S_AUTH_API_KEY from rhacs-ir-runner-token
+ansible-navigator run playbooks/contain_runtime_violation.yml \
+  --execution-environment-image quay.io/sluetzen/rhacs-ir-ee:latest \
+  -e @webhook-example.json \
+  -e verify_ssl=false \
+  --penv K8S_AUTH_HOST --penv K8S_AUTH_API_KEY \
+  --mode stdout --playbook-artifact-enable false
+```
+
+`kubernetes.core` expects `K8S_AUTH_API_KEY` (AAP credential name). `K8S_AUTH_TOKEN` is accepted as an alias.
+Pass `--penv` so those vars reach the execution environment container.
+
+If the webhook pod no longer exists, override targets: `-e target_namespace=... -e target_pod=...`.
+
+Bootstrap playbook (needs AAP vars, not cluster token in extra-vars):
+
+```bash
+ansible-navigator run playbooks/configure_aap_eda.yml \
+  -e @aap-eda-vars.yml --tags controller
+```
+
+## Quick checks
+
+Syntax / dry validation without the TUI:
+
+```bash
+ansible-navigator run playbooks/contain_runtime_violation.yml \
+  --execution-environment-image quay.io/sluetzen/rhacs-ir-ee:latest \
+  -e @extra-vars.yml --mode stdout --playbook-artifact-enable false
+```
+
+Limit scope while iterating: `--tags logs` or `--skip-tags publish,networkpolicy`.
+
+## Agent expectations
+
+- After editing playbooks under `playbooks/`, run the relevant `ansible-navigator run` command and fix failures before finishing.
+- Do not commit `extra-vars.yml`, `aap-eda-vars.yml`, or tokens.
+- If the EE image is stale (e.g. after `requirements.txt` changes), rebuild/push it first, then re-run navigator.

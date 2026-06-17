@@ -1,0 +1,36 @@
+---
+description: Use project .venv for all Python installs and commands
+alwaysApply: true
+---
+
+# Python virtual environment
+
+All Python tooling in this repo runs inside **`.venv`**. Never install packages globally or use system `pip`/`python3` for project work.
+
+## Setup
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+ansible-galaxy collection install -r collections/requirements.yml -p collections
+```
+
+## Commands
+
+Always activate the venv first (or call `.venv/bin/python` / `.venv/bin/pip` explicitly):
+
+```bash
+source .venv/bin/activate
+ansible-navigator run playbooks/contain_runtime_violation.yml ...
+ansible-playbook playbooks/contain_runtime_violation.yml ...
+pip install -r requirements.txt
+```
+
+## Agent expectations
+
+- Run `pip install`, `ansible-playbook`, `ansible-navigator`, and `ansible-builder` only with the venv active.
+- Prefer `.venv/bin/<tool>` in scripts when activation is awkward.
+- Do not add `sudo pip install` or modify system site-packages.
+- After changing `requirements.txt`, reinstall in `.venv` and rebuild the EE if dependencies affect the execution environment.
+- Playbooks use `VIRTUAL_ENV` for `ansible_python_interpreter` when the venv is active.

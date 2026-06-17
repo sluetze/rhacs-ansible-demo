@@ -1,0 +1,41 @@
+---
+description: Run ansible-lint on Ansible YAML before finishing edits
+alwaysApply: true
+---
+
+# ansible-lint
+
+After changing Ansible content, **run `ansible-lint`** and fix reported issues before considering the work done.
+
+## Setup
+
+From the project venv (see `python-venv` rule):
+
+```bash
+source .venv/bin/activate
+pip install ansible-lint   # if not already installed
+ansible-galaxy collection install -r collections/requirements.yml -p collections
+```
+
+## Lint targets
+
+Lint the paths you touched, or the whole tree:
+
+```bash
+ansible-lint playbooks/
+ansible-lint rulebooks/
+ansible-lint vars/
+```
+
+Single file after a focused edit:
+
+```bash
+ansible-lint playbooks/contain_runtime_violation.yml
+```
+
+## Agent expectations
+
+- Run `ansible-lint` on every playbook, rulebook, or vars file you add or modify.
+- Fix **errors**; address **warnings** when practical (do not disable rules without a short comment and reason).
+- Do not commit secrets; lint may flag hardcoded tokens—use credentials / `no_log` instead.
+- Run lint after ansible-navigator tests when both apply.
