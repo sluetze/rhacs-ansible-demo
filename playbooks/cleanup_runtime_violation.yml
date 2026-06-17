@@ -1,0 +1,134 @@
+---
+# Manual cleanup of resources created by playbooks/contain_runtime_violation.yml.
+# Example: ansible-playbook playbooks/cleanup_runtime_violation.yml -e @extra-vars.yml
+#
+# Required: host, bearer_token
+# Optional:
+#   - verify_ssl (default false)
+#   - target_namespace — required for NetworkPolicy cleanup
+#   - evidence_ir_namespace (default rhacs-incident-response)
+#   - cleanup_networkpolicies, cleanup_evidence (default true)
+#
+- name: RHACS incident response — cleanup containment and evidence publish resources
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: >-
+      {{ (lookup('env', 'VIRTUAL_ENV') ~ '/bin/python') if (lookup('env', 'VIRTUAL_ENV', default='') | length > 0)
+         else lookup('env', 'RHACS_ANSIBLE_PYTHON', default='/usr/bin/python3') }}
+    _rhacs_ir_managed_by_label: app.kubernetes.io/managed-by=rhacs-incident-response
+    _rhacs_ir_evidence_label: app=rhacs-ir-evidence
+    _k8s_auth_host: >-
+      {{
+        lookup('env', 'K8S_AUTH_HOST')
+        | default(host | default('', true), true)
+        | trim
+      }}
+    _k8s_auth_token: >-
+      {{
+        lookup('env', 'K8S_AUTH_API_KEY')
+        | default(lookup('env', 'K8S_AUTH_TOKEN', default=''), true)
+        | default(bearer_token | default('', true), true)
+        | trim
+      }}
+    _k8s_auth_verify_ssl: >-
+      {{
+        (
+          lookup('env', 'K8S_AUTH_VERIFY_SSL')
+          | default(verify_ssl | default('', true), true)
+          | default(false)
+        ) | bool
+      }}
+  environment:
+    K8S_AUTH_HOST: "{{ _k8s_auth_host | default('') }}"
+    K8S_AUTH_API_KEY: "{{ _k8s_auth_token | default('') }}"
+    K8S_AUTH_VERIFY_SSL: "{{ (_k8s_auth_verify_ssl | default(false) | bool) | string | lower }}"
+
+  tasks:
+    - name: Mirror resolved auth for uri and oc tasks
+      ansible.builtin.set_fact:
+        host: "{{ _k8s_auth_host }}"
+        bearer_token: "{{ _k8s_auth_token }}"
+        verify_ssl: "{{ _k8s_auth_verify_ssl }}"
+      no_log: true
+
+    - name: Require OpenShift API URL and bearer token
+      ansible.builtin.assert:
+        that:
+          - _k8s_auth_host | length > 0
+          - _k8s_auth_token | length > 0
+        fail_msg: >-
+          Pass -e host=... -e bearer_token=..., attach the Controller OpenShift credential,
+          or use -e @extra-vars.yml.
+
+    - name: Remove deny-all NetworkPolicies managed by RHACS incident response
+      kubernetes.core.k8s:
+        state: absent
+        kind: NetworkPolicy
+        namespace: "{{ target_namespace }}"
+        label_selectors:
+          - "{{ _rhacs_ir_managed_by_label }}"
+      when:
+        - cleanup_networkpolicies | default(true) | bool
+        - target_namespace is defined and target_namespace | length > 0
+      tags: [networkpolicy]
+      no_log: true
+
+    - name: Note skipped NetworkPolicy cleanup (target_namespace unset)
+      ansible.builtin.debug:
+        msg: >-
+          Skipping NetworkPolicy cleanup: pass -e target_namespace=<namespace>
+          where contain_runtime_violation applied the deny-all policy.
+      when:
+        - cleanup_networkpolicies | default(true) | bool
+        - target_namespace is not defined or (target_namespace | default('') | length == 0)
+      tags: [networkpolicy]
+
+    - name: Remove evidence publish Pod(s)
+      kubernetes.core.k8s:
+        state: absent
+        kind: Pod
+        namespace: "{{ evidence_ir_namespace | default('rhacs-incident-response') }}"
+        label_selectors:
+          - "{{ _rhacs_ir_evidence_label }}"
+      when: cleanup_evidence | default(true) | bool
+      tags: [evidence]
+      no_log: true
+
+    - name: Remove evidence publish Service(s)
+      kubernetes.core.k8s:
+        state: absent
+        kind: Service
+        namespace: "{{ evidence_ir_namespace | default('rhacs-incident-response') }}"
+        label_selectors:
+          - "{{ _rhacs_ir_evidence_label }}"
+      when: cleanup_evidence | default(true) | bool
+      tags: [evidence]
+      no_log: true
+
+    - name: Remove evidence publish Route(s)
+      kubernetes.core.k8s:
+        state: absent
+        api_version: route.openshift.io/v1
+        kind: Route
+        namespace: "{{ evidence_ir_namespace | default('rhacs-incident-response') }}"
+        label_selectors:
+          - "{{ _rhacs_ir_evidence_label }}"
+      when: cleanup_evidence | default(true) | bool
+      tags: [evidence]
+      no_log: true
+
+    - name: Cleanup summary
+      ansible.builtin.debug:
+        msg: >-
+          {% if (cleanup_networkpolicies | default(true) | bool) and target_namespace is defined and target_namespace | length > 0 %}
+          NetworkPolicy cleanup in namespace {{ target_namespace }}
+          (label {{ _rhacs_ir_managed_by_label }}).
+          {% elif cleanup_networkpolicies | default(true) | bool %}
+          NetworkPolicy cleanup skipped (target_namespace not set).
+          {% endif %}
+          {% if cleanup_evidence | default(true) | bool %}
+          Evidence publish cleanup in {{ evidence_ir_namespace | default('rhacs-incident-response') }}
+          (label {{ _rhacs_ir_evidence_label }}): Pods, Services, Routes removed.
+          {% endif %}

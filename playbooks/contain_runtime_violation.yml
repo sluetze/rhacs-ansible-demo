@@ -50,18 +50,11 @@
           | default(ocp_verify_ssl | default(false))
         ) | bool
       }}
-  # AAP injects K8S_AUTH_* from the OpenShift credential; local runs set them in pre_tasks.
+  # AAP injects K8S_AUTH_* from the OpenShift credential; local runs use play environment below.
   environment:
     K8S_AUTH_HOST: "{{ _k8s_auth_host | default('') }}"
     K8S_AUTH_API_KEY: "{{ _k8s_auth_token | default('') }}"
     K8S_AUTH_VERIFY_SSL: "{{ (_k8s_auth_verify_ssl | default(false) | bool) | string | lower }}"
-  # kubernetes.core reads K8S_AUTH_* env vars; module_defaults also pass host/api_key explicitly
-  # so auth works inside ansible-navigator EEs when --penv or -e bearer_token is used.
-  module_defaults:
-    group/kubernetes.core.k8s:
-      host: "{{ _k8s_auth_host }}"
-      api_key: "{{ _k8s_auth_token }}"
-      validate_certs: "{{ _k8s_auth_verify_ssl | bool }}"
 
   pre_tasks:
     - name: Set rhacs_webhook_payload from ansible_eda when running directly from EDA
