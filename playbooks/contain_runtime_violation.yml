@@ -26,11 +26,42 @@
     ansible_python_interpreter: >-
       {{ (lookup('env', 'VIRTUAL_ENV') ~ '/bin/python') if (lookup('env', 'VIRTUAL_ENV', default='') | length > 0)
          else lookup('env', 'RHACS_ANSIBLE_PYTHON', default='/usr/bin/python3') }}
+    # Resolved at play load from AAP credential env, --penv, or -e host/bearer_token (before pre_tasks).
+    _k8s_auth_host: >-
+      {{
+        lookup('env', 'K8S_AUTH_HOST')
+        | default(host | default('', true), true)
+        | default(ocp_api | default('', true), true)
+        | trim
+      }}
+    _k8s_auth_token: >-
+      {{
+        lookup('env', 'K8S_AUTH_API_KEY')
+        | default(lookup('env', 'K8S_AUTH_TOKEN', default=''), true)
+        | default(bearer_token | default('', true), true)
+        | default(ocp_token | default('', true), true)
+        | trim
+      }}
+    _k8s_auth_verify_ssl: >-
+      {{
+        (
+          lookup('env', 'K8S_AUTH_VERIFY_SSL')
+          | default(verify_ssl | default('', true), true)
+          | default(ocp_verify_ssl | default(false))
+        ) | bool
+      }}
   # AAP injects K8S_AUTH_* from the OpenShift credential; local runs set them in pre_tasks.
   environment:
     K8S_AUTH_HOST: "{{ _k8s_auth_host | default('') }}"
     K8S_AUTH_API_KEY: "{{ _k8s_auth_token | default('') }}"
     K8S_AUTH_VERIFY_SSL: "{{ (_k8s_auth_verify_ssl | default(false) | bool) | string | lower }}"
+  # kubernetes.core reads K8S_AUTH_* env vars; module_defaults also pass host/api_key explicitly
+  # so auth works inside ansible-navigator EEs when --penv or -e bearer_token is used.
+  module_defaults:
+    group/kubernetes.core.k8s:
+      host: "{{ _k8s_auth_host }}"
+      api_key: "{{ _k8s_auth_token }}"
+      validate_certs: "{{ _k8s_auth_verify_ssl | bool }}"
 
   pre_tasks:
     - name: Set rhacs_webhook_payload from ansible_eda when running directly from EDA
@@ -40,32 +71,6 @@
         - ansible_eda is defined
         - ansible_eda.event is defined
         - rhacs_webhook_payload is not defined or (rhacs_webhook_payload | default('') | length == 0)
-
-    - name: Resolve OpenShift API auth (AAP credential env vars take precedence)
-      ansible.builtin.set_fact:
-        _k8s_auth_host: >-
-          {{
-            lookup('env', 'K8S_AUTH_HOST')
-            | default(host | default('', true), true)
-            | default(ocp_api | default('', true), true)
-            | trim
-          }}
-        _k8s_auth_token: >-
-          {{
-            lookup('env', 'K8S_AUTH_API_KEY')
-            | default(bearer_token | default('', true), true)
-            | default(ocp_token | default('', true), true)
-            | trim
-          }}
-        _k8s_auth_verify_ssl: >-
-          {{
-            (
-              lookup('env', 'K8S_AUTH_VERIFY_SSL')
-              | default(verify_ssl | default('', true), true)
-              | default(ocp_verify_ssl | default(false))
-            ) | bool
-          }}
-      no_log: true
 
     - name: Mirror resolved auth for uri and oc tasks
       ansible.builtin.set_fact:
@@ -82,6 +87,16 @@
         fail_msg: >-
           Attach an OpenShift or Kubernetes API Bearer Token credential to the job template
           (injects K8S_AUTH_HOST / K8S_AUTH_API_KEY), or pass -e host=... -e bearer_token=... for ad-hoc runs.
+
+    - name: Verify OpenShift API bearer token (fail fast before kubernetes.core)
+      ansible.builtin.uri:
+        url: "{{ host }}/version"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ bearer_token }}"
+        validate_certs: "{{ verify_ssl | bool }}"
+        status_code: [200]
+      no_log: true
 
     - name: Print full event
       ansible.builtin.debug:
