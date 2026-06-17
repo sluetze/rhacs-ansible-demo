@@ -138,7 +138,6 @@
         namespace: "{{ target_namespace }}"
         name: "{{ target_pod }}"
       register: pod_query
-      no_log: true
 
     - name: Fail if pod not found
       ansible.builtin.assert:
@@ -195,7 +194,6 @@
         label: "{{ item }}"
       register: pod_logs_per_container
       ignore_errors: true
-      no_log: true
       tags: [logs]
 
     - name: Write container logs to evidence
@@ -220,7 +218,6 @@
         label: "{{ item }}"
       register: pod_logs_prev_per_container
       ignore_errors: true
-      no_log: true
       tags: [logs]
 
     - name: Write previous logs if present
@@ -261,7 +258,6 @@
       register: node_logs_crio
       changed_when: false
       when: enable_nodelog_collection | default(true) | bool
-      no_log: true
       tags: [logs]
 
     - name: Write kubelet node logs
@@ -296,7 +292,6 @@
         timeout: 300
       register: checkpoint_response
       failed_when: false
-      no_log: true
       tags: [checkpoint]
 
     - name: Save checkpoint API response
@@ -322,7 +317,6 @@
       kubernetes.core.k8s:
         state: present
         definition: "{{ lookup('template', playbook_dir + '/../templates/networkpolicy-deny-all.yaml.j2') | from_yaml }}"
-      no_log: true
       tags: [networkpolicy]
 
     - name: Summary
@@ -379,7 +373,6 @@
         definition: "{{ lookup('template', playbook_dir + '/../templates/evidence-nginx-pod.yaml.j2') | from_yaml }}"
       register: evidence_nginx_pod
       when: evidence_publish_enabled | default(true) | bool
-      no_log: true
       tags: [publish]
 
     - name: Wait for evidence nginx pod to be Ready
@@ -399,7 +392,6 @@
       retries: 24
       delay: 5
       when: evidence_publish_enabled | default(true) | bool
-      no_log: true
       tags: [publish]
 
     - name: Stat evidence archive on execution host
@@ -421,7 +413,6 @@
         remote_path: "{{ evidence_nginx_mount_path }}/{{ evidence_archive_name }}"
         state: to_pod
       when: evidence_publish_enabled | default(true) | bool
-      no_log: true
       tags: [publish]
 
     - name: Verify evidence archive is present in shared volume
@@ -436,7 +427,6 @@
       changed_when: false
       failed_when: evidence_copy_verify.rc | default(1) | int != 0
       when: evidence_publish_enabled | default(true) | bool
-      no_log: true
       tags: [publish]
 
     - name: Deploy evidence download Service
@@ -444,7 +434,6 @@
         state: present
         definition: "{{ lookup('template', playbook_dir + '/../templates/evidence-nginx-service.yaml.j2') | from_yaml }}"
       when: evidence_publish_enabled | default(true) | bool
-      no_log: true
       tags: [publish]
 
     - name: Deploy evidence download Route
@@ -454,7 +443,6 @@
       when:
         - evidence_publish_enabled | default(true) | bool
         - evidence_create_route | default(true) | bool
-      no_log: true
       tags: [publish]
 
     - name: Read Route for external download URL
@@ -467,7 +455,6 @@
       when:
         - evidence_publish_enabled | default(true) | bool
         - evidence_create_route | default(true) | bool
-      no_log: true
       tags: [publish]
 
     - name: Publish summary
