@@ -61,7 +61,7 @@ aap_ee_registry_host: ""
 # Job-template extra vars are configured in AAP (not in this repo). See example-extra-vars.yml.
 aap_job_template_extra_vars: {}
 
-# OpenShift API credential on Controller (injects host, bearer_token, verify_ssl into job runs)
+# OpenShift API credential on Controller (injects K8S_AUTH_HOST, K8S_AUTH_API_KEY, K8S_AUTH_VERIFY_SSL)
 aap_configure_ocp_credential: true
 aap_ocp_credential_name: RHACS IR OpenShift
 aap_ocp_credential_type: "OpenShift or Kubernetes API Bearer Token"

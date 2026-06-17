@@ -291,42 +291,71 @@
       when: enable_nodelog_collection | default(true) | bool and node_logs_crio is not failed
       tags: [logs]
 
-    - name: Trigger kubelet forensic checkpoint (POST node proxy)
+    - name: Collect kubelet forensic checkpoint
       when: enable_checkpoint_collection | default(true) | bool
-      ansible.builtin.uri:
-        url: >-
-          {{ host }}/api/v1/nodes/{{ target_node }}/proxy/checkpoint/{{
-          target_namespace | urlencode }}/{{ target_pod | urlencode }}/{{
-          target_container | urlencode }}
-        method: POST
-        body_format: json
-        headers:
-          Authorization: "Bearer {{ bearer_token }}"
-        validate_certs: "{{ verify_ssl }}"
-        status_code: [200, 201, 202]
-        timeout: 300
-      register: checkpoint_response
-      failed_when: false
       tags: [checkpoint]
+      block:
+        - name: Trigger kubelet forensic checkpoint (POST node proxy)
+          ansible.builtin.uri:
+            url: >-
+              {{ host }}/api/v1/nodes/{{ target_node }}/proxy/checkpoint/{{
+              target_namespace | urlencode }}/{{ target_pod | urlencode }}/{{
+              target_container | urlencode }}
+            method: POST
+            headers:
+              Authorization: "Bearer {{ bearer_token }}"
+            validate_certs: "{{ verify_ssl }}"
+            status_code: [200, 201, 202]
+            timeout: 300
+          register: checkpoint_response
 
-    - name: Save checkpoint API response
-      ansible.builtin.copy:
-        dest: "{{ evidence_dir }}/checkpoint-response.json"
-        mode: "0600"
-        content: "{{ checkpoint_response | to_nice_json }}"
-      when: enable_checkpoint_collection | default(true) | bool and checkpoint_response is defined
-      tags: [checkpoint]
+        - name: Parse checkpoint archive paths from API response
+          ansible.builtin.set_fact:
+            checkpoint_archive_paths: "{{ checkpoint_response.json.items | default([]) }}"
 
-    - name: Note checkpoint failure (check CRI-O CRIU / permissions)
-      ansible.builtin.debug:
-        msg: >-
-          Checkpoint HTTP {{ checkpoint_response.status | default('n/a') }} —
-          see {{ evidence_dir }}/checkpoint-response.json.
-          If 403/404, confirm RBAC nodes/proxy CREATE and CRIU enablement on workers.
-      when:
-        - enable_checkpoint_collection | default(true) | bool
-        - checkpoint_response.status | default(200) not in [200, 201, 202]
-      tags: [checkpoint]
+        - name: Save checkpoint manifest (paths returned by kubelet)
+          ansible.builtin.copy:
+            dest: "{{ evidence_dir }}/checkpoint-manifest.json"
+            mode: "0600"
+            content: "{{ checkpoint_response.json | to_nice_json }}"
+
+        - name: Download checkpoint archive from node via kubelet proxy
+          ansible.builtin.uri:
+            url: >-
+              {{ host }}/api/v1/nodes/{{ target_node }}/proxy/checkpoint/{{
+              item | regex_replace('^.*/', '') | urlencode }}
+            method: GET
+            headers:
+              Authorization: "Bearer {{ bearer_token }}"
+            validate_certs: "{{ verify_ssl }}"
+            status_code: [200]
+            timeout: 600
+            dest: "{{ evidence_dir }}/{{ item | regex_replace('^.*/', '') }}"
+          loop: "{{ checkpoint_archive_paths }}"
+          when: checkpoint_archive_paths | length > 0
+
+      rescue:
+        - name: Save checkpoint error details
+          ansible.builtin.copy:
+            dest: "{{ evidence_dir }}/checkpoint-error.json"
+            mode: "0600"
+            content: >-
+              {{
+                {
+                  'status': ansible_failed_result.status | default(checkpoint_response.status | default('n/a')),
+                  'body': ansible_failed_result.content | default(
+                    ansible_failed_result.msg | default(checkpoint_response.content | default(''))
+                  ),
+                  'url': ansible_failed_result.url | default(checkpoint_response.url | default(''))
+                } | to_nice_json
+              }}
+
+        - name: Note checkpoint failure (RBAC nodes/checkpoint, apiserver binding, or CRI-U)
+          ansible.builtin.debug:
+            msg: >-
+              Checkpoint failed — see {{ evidence_dir }}/checkpoint-error.json.
+              Apply infra/rbac/ (kube-apiserver-checkpoints + rhacs-ir-openshift-ops)
+              and confirm CRI-U is enabled on workers.
 
     - name: Apply deny-all NetworkPolicy for matched pod labels
       kubernetes.core.k8s:

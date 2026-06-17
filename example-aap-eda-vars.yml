@@ -19,6 +19,9 @@
 # ocp_api: "https://api.cluster.example.com:6443"
 # ocp_token: "<rhacs-ir-runner-token>"
 #
+# Refresh only the OpenShift credential (no full bootstrap):
+#   ansible-playbook playbooks/update_aap_ocp_credential.yml -e @aap-eda-vars.yml
+#
 # Execution environment — shared registry login (same account for base pull and EE push):
 # aap_ee_image_repository: quay.io/your-user/rhacs-ir-ee
 # aap_configure_execution_environment: true

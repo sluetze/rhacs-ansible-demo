@@ -52,7 +52,7 @@ oc auth can-i create pods/exec -n rhacs-incident-response \
 
 RBAC is split by scope:
 
-- **ClusterRole** `rhacs-ir-openshift-ops` — forensic API calls (pod logs, nodes/proxy checkpoint, NetworkPolicies).
+- **ClusterRole** `rhacs-ir-openshift-ops` — forensic API calls (pod logs, `nodes/checkpoint`, NetworkPolicies). `kube-apiserver-checkpoints` grants the apiserver the same subresource (OpenShift 4.17+).
 - **Role** `rhacs-ir-evidence-publish` (namespace `rhacs-incident-response`) — spawn nginx download pod, Service, Route, and `pods/exec` for copying the zip archive.
 
 ## 2. Local Ansible (optional)
@@ -66,7 +66,7 @@ ansible-galaxy collection install -r collections/requirements.yml -p collections
 
 The publish phase uses **`community.general.archive`** (there is no `ansible.builtin.archive`). Your AAP execution environment must include `community.general` from [collections/requirements.yml](collections/requirements.yml)—rebuild the EE or run `ansible-galaxy collection install` into it after changing requirements.
 
-Use the **same Python** as Ansible (`source .venv/bin/activate` sets `VIRTUAL_ENV`, which the playbook maps to `ansible_python_interpreter`). The `kubernetes` Python package is required for `kubernetes.core` modules.
+Use the **same Python** as Ansible (`source .venv/bin/activate` sets `VIRTUAL_ENV`, which the playbook maps to `ansible_python_interpreter`). The `kubernetes` Python package is required for `kubernetes.core` modules. [requirements.txt](requirements.txt) pins **`kubernetes<36`** because newer clients expect `api_key['BearerToken']` while `kubernetes.core` still sets `api_key['authorization']`, which silently drops the bearer token and yields `system:anonymous` 403 errors. Rebuild the RHACS IR execution environment after changing `requirements.txt`.
 
 **TLS:** Lab clusters often use a private CA. Either:
 
@@ -96,9 +96,7 @@ Important extra vars:
 
 | Variable | Meaning |
 |----------|---------|
-| `host` | Kubernetes API URL (from Controller **OpenShift or Kubernetes API Bearer Token** credential) |
-| `bearer_token` | Bearer token for `rhacs-ir-runner` (same credential) |
-| `verify_ssl` | `true`/`false` from credential; use `false` only with care in internal labs |
+| `host` / `bearer_token` / `verify_ssl` | For **local** `ansible-playbook` runs only (`-e host=... -e bearer_token=...`). On AAP, attach the **OpenShift or Kubernetes API Bearer Token** credential to the job template — it injects `K8S_AUTH_HOST`, `K8S_AUTH_API_KEY`, and `K8S_AUTH_VERIFY_SSL` (do **not** put the token in job extra vars). |
 | `enable_checkpoint_collection` | `true` (default) runs `POST .../proxy/checkpoint/...`; set `false` when CRI-U is off |
 | `enable_nodelog_collection` | `true` (default) runs `oc adm node-logs` using `oc` baked into the RHACS IR EE; set `false` to skip |
 | `node_log_tail` | Max lines per node unit (default `5000`) |
@@ -234,7 +232,7 @@ Skip image build and only register an existing image: `-e aap_build_execution_en
 2. Create a generic Credential for the RHACS webhook (or a **Basic Event Stream** credential on EDA with username/password).
 3. Create a **Red Hat Ansible Automation Platform** credential on EDA pointing at `https://<aap-host>/api/controller/` with Controller user/password or token.
 4. Use a **Decision Environment** image with **ansible-rulebook** and **ansible.eda** (e.g. `quay.io/ansible/ansible-rulebook:latest`).
-5. Create a **Job Template** for `playbooks/contain_runtime_violation.yml` and attach an **OpenShift or Kubernetes API Bearer Token** credential (`host`, `bearer_token`, `verify_ssl`).
+5. Create a **Job Template** for `playbooks/contain_runtime_violation.yml` and attach an **OpenShift or Kubernetes API Bearer Token** credential (injects `K8S_AUTH_*` env vars at job launch).
 6. Create a **Rulebook Activation** from `rulebooks/rhacs_webhook.yml`; bind the **RHACS-OCP-Forensics** event stream (or rely on the rulebook webhook). Set `webhook_token` on the activation only when using the embedded webhook. Set playbook behavior on the **job template** extra vars, not on the rulebook.
 
 Adjust the rulebook `condition:` if your RHACS JSON nests fields differently—capture one real POST and align keys.
@@ -245,11 +243,17 @@ In **RHACS**: Integrations → **Generic webhook** → endpoint URL from your ED
 
 ## 5. Forensic checkpoint notes
 
-- Checkpoint is invoked with `POST /api/v1/nodes/{node}/proxy/checkpoint/{namespace}/{pod}/{container}`.
-- If the API returns 403/404, confirm **CRI-U** on workers and **RBAC** (`nodes` / `nodes/proxy`) per current OpenShift documentation.
+- Checkpoint is invoked with `POST /api/v1/nodes/{node}/proxy/checkpoint/{namespace}/{pod}/{container}`; the response lists on-node `.tar` paths. The playbook then `GET`s each archive via the same node proxy and stores the tarball in evidence (not the Ansible `uri` register dump).
+- **OpenShift 4.17+** maps checkpoint calls to the `nodes/checkpoint` subresource. Apply all of `infra/rbac/` (`oc apply -k infra/rbac/`):
+  - `kube-apiserver-checkpoints` — grants `system:kube-apiserver` `nodes/checkpoint` **create/get** (required or every caller gets 403).
+  - `rhacs-ir-openshift-ops` — grants `rhacs-ir-runner` the same plus existing forensics verbs.
+- Verify (use `--subresource`; `nodes/checkpoint` as a single resource name often reports **no** even when RBAC is correct):
+  `oc auth can-i create nodes --subresource=checkpoint --as=system:serviceaccount:rhacs-incident-response:rhacs-ir-runner`
+  Or: `oc auth can-i --list --as=system:serviceaccount:rhacs-incident-response:rhacs-ir-runner | grep checkpoint`
+- If the API returns 404, confirm **CRI-U** on workers per current OpenShift documentation.
 - Checkpoints are sensitive; store evidence only in secured locations.
 
 ## Security
 
 - Do **not** commit `.env` or live tokens (see [.gitignore](.gitignore)).
-- The `rhacs-ir-runner` **ClusterRole** is intentionally narrow but still sensitive (`nodes/proxy`, cluster-wide `NetworkPolicy` writes); scope down with **Role** + **RoleBinding** per namespace in production.
+- The `rhacs-ir-runner` **ClusterRole** is intentionally narrow but still sensitive (`nodes/checkpoint`, cluster-wide `NetworkPolicy` writes); scope down with **Role** + **RoleBinding** per namespace in production.

@@ -1,3 +1,5 @@
 # Python deps for kubernetes.core (k8s* modules).
 ansible-core>=2.15
-kubernetes>=28.0.0
+# kubernetes 36+ expects api_key['BearerToken']; kubernetes.core still sets
+# api_key['authorization'], which silently drops the Authorization header (system:anonymous).
+kubernetes>=28.0.0,<36.0.0

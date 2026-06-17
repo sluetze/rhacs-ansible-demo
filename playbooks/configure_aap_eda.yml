@@ -32,7 +32,7 @@
       }}
     _controller_host: "{{ _controller_host_raw | regex_replace('/api/controller/?$', '') | regex_replace('/$', '') }}"
     _controller_api_url: "{{ _controller_host ~ '/api/controller/' }}"
-    # API auth comes from the attached OpenShift credential (host, bearer_token, verify_ssl).
+    # API auth: attach OpenShift credential to the job template (injects K8S_AUTH_* env vars).
     # Pass ocp_api / ocp_token only when creating that credential, not as job extra_vars.
     _job_template_extra_vars: "{{ aap_job_template_extra_vars }}"
     _aap_repo_root: "{{ playbook_dir | dirname }}"
@@ -393,6 +393,12 @@
         extra_vars: "{{ _job_template_extra_vars }}"
         ask_variables_on_launch: true
         job_type: run
+        credentials: >-
+          {{
+            [aap_ocp_credential_name]
+            if (aap_configure_ocp_credential | bool)
+            else omit
+          }}
 
     - name: Create incident response job template (platform default execution environment)
       when: not (_aap_ee_register_on_controller | bool)
@@ -406,14 +412,12 @@
         extra_vars: "{{ _job_template_extra_vars }}"
         ask_variables_on_launch: true
         job_type: run
-
-    - name: Attach OpenShift credential to job template
-      when: aap_configure_ocp_credential | bool
-      awx.awx.job_template:
-        name: "{{ aap_job_template_name }}"
-        organization: "{{ aap_organization }}"
-        credentials:
-          - "{{ aap_ocp_credential_name }}"
+        credentials: >-
+          {{
+            [aap_ocp_credential_name]
+            if (aap_configure_ocp_credential | bool)
+            else omit
+          }}
 
 - name: Configure Event-Driven Ansible (EDA)
   hosts: localhost
