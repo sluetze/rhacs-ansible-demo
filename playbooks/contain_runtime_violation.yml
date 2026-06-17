@@ -9,7 +9,7 @@
 #   - target_container (defaults to first container; used for kubelet checkpoint only; logs collected for every container)
 #   - networkpolicy_name, policy_name
 #   - evidence_dir (default: ~/rhacs-ir-evidence/<timestamp> on controller)
-#   - host, bearer_token, verify_ssl (from Controller OpenShift/K8s credential; legacy ocp_* aliases)
+#   - host, bearer_token, verify_ssl (local runs; AAP uses K8S_AUTH_* from attached credential)
 #   - enable_checkpoint_collection: false to skip kubelet checkpoint (default true)
 #   - enable_nodelog_collection: false skips oc adm node-logs (default true; RHACS IR EE installs oc)
 #   - evidence_publish_enabled: false to skip zip + nginx download pod (tag publish)
@@ -26,6 +26,14 @@
     ansible_python_interpreter: >-
       {{ (lookup('env', 'VIRTUAL_ENV') ~ '/bin/python') if (lookup('env', 'VIRTUAL_ENV', default='') | length > 0)
          else lookup('env', 'RHACS_ANSIBLE_PYTHON', default='/usr/bin/python3') }}
+  # AAP injects K8S_AUTH_* from the OpenShift credential; local runs set them in pre_tasks.
+  environment:
+    K8S_AUTH_HOST: "{{ _k8s_auth_host | default('') }}"
+    K8S_AUTH_API_KEY: "{{ _k8s_auth_token | default('') }}"
+    K8S_AUTH_VERIFY_SSL: "{{ (_k8s_auth_verify_ssl | default(false) | bool) | string | lower }}"
+  module_defaults:
+    group/kubernetes.core.k8s:
+      no_log: true
 
   pre_tasks:
     - name: Set rhacs_webhook_payload from ansible_eda when running directly from EDA
@@ -36,33 +44,47 @@
         - ansible_eda.event is defined
         - rhacs_webhook_payload is not defined or (rhacs_webhook_payload | default('') | length == 0)
 
-    - name: Resolve OpenShift API auth from Controller credential or extra vars
+    - name: Resolve OpenShift API auth (AAP credential env vars take precedence)
       ansible.builtin.set_fact:
-        host: >-
+        _k8s_auth_host: >-
           {{
-            host | default(lookup('env', 'K8S_AUTH_HOST'), true)
-            | default(ocp_api, true)
+            lookup('env', 'K8S_AUTH_HOST')
+            | default(host | default('', true), true)
+            | default(ocp_api | default('', true), true)
+            | trim
           }}
-        bearer_token: >-
+        _k8s_auth_token: >-
           {{
-            bearer_token | default(lookup('env', 'K8S_AUTH_API_KEY'), true)
-            | default(ocp_token, true)
+            lookup('env', 'K8S_AUTH_API_KEY')
+            | default(bearer_token | default('', true), true)
+            | default(ocp_token | default('', true), true)
+            | trim
           }}
-        verify_ssl: >-
+        _k8s_auth_verify_ssl: >-
           {{
-            (verify_ssl | default(lookup('env', 'K8S_AUTH_VERIFY_SSL'), true)
-             | default(ocp_verify_ssl | default(false)))
-            | bool
+            (
+              lookup('env', 'K8S_AUTH_VERIFY_SSL')
+              | default(verify_ssl | default('', true), true)
+              | default(ocp_verify_ssl | default(false))
+            ) | bool
           }}
+      no_log: true
+
+    - name: Mirror resolved auth for uri and oc tasks
+      ansible.builtin.set_fact:
+        host: "{{ _k8s_auth_host }}"
+        bearer_token: "{{ _k8s_auth_token }}"
+        verify_ssl: "{{ _k8s_auth_verify_ssl }}"
+      no_log: true
 
     - name: Require OpenShift API URL and bearer token
       ansible.builtin.assert:
         that:
-          - host is defined and host | length > 0
-          - bearer_token is defined and bearer_token | length > 0
+          - _k8s_auth_host | length > 0
+          - _k8s_auth_token | length > 0
         fail_msg: >-
           Attach an OpenShift or Kubernetes API Bearer Token credential to the job template
-          (host, bearer_token, verify_ssl), or pass -e host=... -e bearer_token=... for ad-hoc runs.
+          (injects K8S_AUTH_HOST / K8S_AUTH_API_KEY), or pass -e host=... -e bearer_token=... for ad-hoc runs.
 
     - name: Print full event
       ansible.builtin.debug:
@@ -115,9 +137,6 @@
   tasks:
     - name: Look up pod
       kubernetes.core.k8s_info:
-        host: "{{ host }}"
-        api_key: "{{ bearer_token }}"
-        validate_certs: "{{ verify_ssl }}"
         kind: Pod
         namespace: "{{ target_namespace }}"
         name: "{{ target_pod }}"
@@ -170,9 +189,6 @@
 
     - name: Fetch container logs (current)
       kubernetes.core.k8s_log:
-        host: "{{ host }}"
-        api_key: "{{ bearer_token }}"
-        validate_certs: "{{ verify_ssl }}"
         namespace: "{{ target_namespace }}"
         name: "{{ target_pod }}"
         container: "{{ item }}"
@@ -196,9 +212,6 @@
 
     - name: Try previous-instance container logs
       kubernetes.core.k8s_log:
-        host: "{{ host }}"
-        api_key: "{{ bearer_token }}"
-        validate_certs: "{{ verify_ssl }}"
         namespace: "{{ target_namespace }}"
         name: "{{ target_pod }}"
         container: "{{ item }}"
@@ -283,6 +296,7 @@
         timeout: 300
       register: checkpoint_response
       failed_when: false
+      no_log: true
       tags: [checkpoint]
 
     - name: Save checkpoint API response
@@ -306,9 +320,6 @@
 
     - name: Apply deny-all NetworkPolicy for matched pod labels
       kubernetes.core.k8s:
-        host: "{{ host }}"
-        api_key: "{{ bearer_token }}"
-        validate_certs: "{{ verify_ssl }}"
         state: present
         definition: "{{ lookup('template', playbook_dir + '/../templates/networkpolicy-deny-all.yaml.j2') | from_yaml }}"
       tags: [networkpolicy]
@@ -363,9 +374,6 @@
 
     - name: Deploy evidence nginx pod
       kubernetes.core.k8s:
-        host: "{{ host }}"
-        api_key: "{{ bearer_token }}"
-        validate_certs: "{{ verify_ssl }}"
         state: present
         definition: "{{ lookup('template', playbook_dir + '/../templates/evidence-nginx-pod.yaml.j2') | from_yaml }}"
       register: evidence_nginx_pod
@@ -374,9 +382,6 @@
 
     - name: Wait for evidence nginx pod to be Ready
       kubernetes.core.k8s_info:
-        host: "{{ host }}"
-        api_key: "{{ bearer_token }}"
-        validate_certs: "{{ verify_ssl }}"
         kind: Pod
         namespace: "{{ evidence_ir_namespace }}"
         name: "{{ evidence_nginx_pod_name }}"
@@ -406,9 +411,6 @@
 
     - name: Copy evidence archive into evidence pod (stager container has tar)
       kubernetes.core.k8s_cp:
-        host: "{{ host }}"
-        api_key: "{{ bearer_token }}"
-        validate_certs: "{{ verify_ssl }}"
         namespace: "{{ evidence_ir_namespace }}"
         pod: "{{ evidence_nginx_pod_name }}"
         container: "{{ evidence_stager_container_name }}"
@@ -420,9 +422,6 @@
 
     - name: Verify evidence archive is present in shared volume
       kubernetes.core.k8s_exec:
-        host: "{{ host }}"
-        api_key: "{{ bearer_token }}"
-        validate_certs: "{{ verify_ssl }}"
         namespace: "{{ evidence_ir_namespace }}"
         pod: "{{ evidence_nginx_pod_name }}"
         container: "{{ evidence_stager_container_name }}"
@@ -437,9 +436,6 @@
 
     - name: Deploy evidence download Service
       kubernetes.core.k8s:
-        host: "{{ host }}"
-        api_key: "{{ bearer_token }}"
-        validate_certs: "{{ verify_ssl }}"
         state: present
         definition: "{{ lookup('template', playbook_dir + '/../templates/evidence-nginx-service.yaml.j2') | from_yaml }}"
       when: evidence_publish_enabled | default(true) | bool
@@ -447,9 +443,6 @@
 
     - name: Deploy evidence download Route
       kubernetes.core.k8s:
-        host: "{{ host }}"
-        api_key: "{{ bearer_token }}"
-        validate_certs: "{{ verify_ssl }}"
         state: present
         definition: "{{ lookup('template', playbook_dir + '/../templates/evidence-nginx-route.yaml.j2') | from_yaml }}"
       when:
@@ -459,9 +452,6 @@
 
     - name: Read Route for external download URL
       kubernetes.core.k8s_info:
-        host: "{{ host }}"
-        api_key: "{{ bearer_token }}"
-        validate_certs: "{{ verify_ssl }}"
         api_version: route.openshift.io/v1
         kind: Route
         namespace: "{{ evidence_ir_namespace }}"
