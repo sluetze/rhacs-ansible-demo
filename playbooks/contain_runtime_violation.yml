@@ -11,6 +11,8 @@
 #   - evidence_dir (default: ~/rhacs-ir-evidence/<timestamp> on controller)
 #   - host, bearer_token, verify_ssl (local runs; AAP uses K8S_AUTH_* from attached credential)
 #   - enable_checkpoint_collection: false to skip kubelet checkpoint (default true)
+#   - checkpoint_fetch_enabled: false to keep manifest only, skip hostPath fetch pod (default true)
+#   - checkpoint_fetch_image / checkpoint_fetch_container_name (ubi9 stager for k8s_cp)
 #   - enable_nodelog_collection: false skips oc adm node-logs (default true; RHACS IR EE installs oc)
 #   - evidence_publish_enabled: false to skip zip + nginx download pod (tag publish)
 #   - evidence_ir_namespace (default rhacs-incident-response)
@@ -295,6 +297,10 @@
       when: enable_checkpoint_collection | default(true) | bool
       tags: [checkpoint]
       block:
+        - name: Mark checkpoint phase as create
+          ansible.builtin.set_fact:
+            checkpoint_phase: create
+
         - name: Trigger kubelet forensic checkpoint (POST node proxy)
           ansible.builtin.uri:
             url: >-
@@ -311,7 +317,7 @@
 
         - name: Parse checkpoint archive paths from API response
           ansible.builtin.set_fact:
-            checkpoint_archive_paths: "{{ checkpoint_response.json.items | default([]) }}"
+            checkpoint_archive_paths: "{{ checkpoint_response.json['items'] | default([]) }}"
 
         - name: Save checkpoint manifest (paths returned by kubelet)
           ansible.builtin.copy:
@@ -319,20 +325,85 @@
             mode: "0600"
             content: "{{ checkpoint_response.json | to_nice_json }}"
 
-        - name: Download checkpoint archive from node via kubelet proxy
-          ansible.builtin.uri:
-            url: >-
-              {{ host }}/api/v1/nodes/{{ target_node }}/proxy/checkpoint/{{
-              item | regex_replace('^.*/', '') | urlencode }}
-            method: GET
-            headers:
-              Authorization: "Bearer {{ bearer_token }}"
-            validate_certs: "{{ verify_ssl }}"
-            status_code: [200]
-            timeout: 600
-            dest: "{{ evidence_dir }}/{{ item | regex_replace('^.*/', '') }}"
-          loop: "{{ checkpoint_archive_paths }}"
-          when: checkpoint_archive_paths | length > 0
+        - name: Fetch checkpoint tarball from target node
+          when:
+            - checkpoint_fetch_enabled | default(true) | bool
+            - checkpoint_archive_paths | length > 0
+          block:
+            - name: Mark checkpoint phase as fetch
+              ansible.builtin.set_fact:
+                checkpoint_phase: fetch
+                checkpoint_fetch_pod_name: "{{ 'rhacs-ir-checkpoint-fetch-' ~ ansible_date_time.epoch }}"
+                _checkpoint_fetch_ns: "{{ evidence_ir_namespace | default('rhacs-incident-response') }}"
+
+            - name: Deploy checkpoint fetch pod on target node
+              kubernetes.core.k8s:
+                state: present
+                definition: "{{ lookup('template', playbook_dir + '/../templates/checkpoint-fetch-pod.yaml.j2') | from_yaml }}"
+
+            - name: Wait for checkpoint fetch pod to be Ready
+              kubernetes.core.k8s_info:
+                kind: Pod
+                namespace: "{{ _checkpoint_fetch_ns }}"
+                name: "{{ checkpoint_fetch_pod_name }}"
+              register: checkpoint_fetch_pod_status
+              until:
+                - checkpoint_fetch_pod_status.resources | length > 0
+                - checkpoint_fetch_pod_status.resources[0].status.phase == 'Running'
+                - checkpoint_fetch_pod_status.resources[0].status.containerStatuses is defined
+                - >-
+                  (checkpoint_fetch_pod_status.resources[0].status.containerStatuses
+                  | selectattr('ready', 'equalto', true) | list | length)
+                  == (checkpoint_fetch_pod_status.resources[0].status.containerStatuses | length)
+              retries: "{{ (checkpoint_fetch_timeout | default(120) | int) // 5 }}"
+              delay: 5
+
+            - name: Verify checkpoint archive is visible in fetch pod
+              kubernetes.core.k8s_exec:
+                namespace: "{{ _checkpoint_fetch_ns }}"
+                pod: "{{ checkpoint_fetch_pod_name }}"
+                container: "{{ checkpoint_fetch_container_name | default('checkpoint-fetch') }}"
+                command: >-
+                  /bin/sh -c "test -s /checkpoints/{{ item | regex_replace('^.*/', '') }}"
+              loop: "{{ checkpoint_archive_paths }}"
+              loop_control:
+                label: "{{ item | regex_replace('^.*/', '') }}"
+              register: checkpoint_fetch_verify
+              changed_when: false
+
+            - name: Copy checkpoint archive from fetch pod to evidence directory
+              kubernetes.core.k8s_cp:
+                namespace: "{{ _checkpoint_fetch_ns }}"
+                pod: "{{ checkpoint_fetch_pod_name }}"
+                container: "{{ checkpoint_fetch_container_name | default('checkpoint-fetch') }}"
+                remote_path: "/checkpoints/{{ item | regex_replace('^.*/', '') }}"
+                local_path: "{{ evidence_dir }}/{{ item | regex_replace('^.*/', '') }}"
+                state: from_pod
+              loop: "{{ checkpoint_archive_paths }}"
+              loop_control:
+                label: "{{ item | regex_replace('^.*/', '') }}"
+
+            - name: Verify checkpoint archive on execution host
+              ansible.builtin.stat:
+                path: "{{ evidence_dir }}/{{ item | regex_replace('^.*/', '') }}"
+              loop: "{{ checkpoint_archive_paths }}"
+              loop_control:
+                label: "{{ item | regex_replace('^.*/', '') }}"
+              register: checkpoint_local_stat
+              failed_when: >-
+                not checkpoint_local_stat.stat.exists
+                or (checkpoint_local_stat.stat.size | default(0) | int) < 1
+
+          always:
+            - name: Remove checkpoint fetch pod
+              kubernetes.core.k8s:
+                state: absent
+                api_version: v1
+                kind: Pod
+                name: "{{ checkpoint_fetch_pod_name }}"
+                namespace: "{{ _checkpoint_fetch_ns | default(evidence_ir_namespace | default('rhacs-incident-response')) }}"
+              when: checkpoint_fetch_pod_name is defined
+              failed_when: false
 
       rescue:
         - name: Save checkpoint error details
@@ -342,20 +413,23 @@
             content: >-
               {{
                 {
+                  'phase': checkpoint_phase | default('create'),
                   'status': ansible_failed_result.status | default(checkpoint_response.status | default('n/a')),
                   'body': ansible_failed_result.content | default(
                     ansible_failed_result.msg | default(checkpoint_response.content | default(''))
                   ),
-                  'url': ansible_failed_result.url | default(checkpoint_response.url | default(''))
+                  'url': ansible_failed_result.url | default(checkpoint_response.url | default('')),
+                  'task': ansible_failed_task.name | default('')
                 } | to_nice_json
               }}
 
-        - name: Note checkpoint failure (RBAC nodes/checkpoint, apiserver binding, or CRI-U)
+        - name: Note checkpoint failure
           ansible.builtin.debug:
             msg: >-
-              Checkpoint failed — see {{ evidence_dir }}/checkpoint-error.json.
-              Apply infra/rbac/ (kube-apiserver-checkpoints + rhacs-ir-openshift-ops)
-              and confirm CRI-U is enabled on workers.
+              Checkpoint {{ checkpoint_phase | default('create') }} failed —
+              see {{ evidence_dir }}/checkpoint-error.json.
+              Create phase: RBAC nodes/checkpoint, kube-apiserver-checkpoints, CRI-U.
+              Fetch phase: privileged SCC (infra/rbac/rhacs-ir-checkpoint-fetch-scc.yaml), hostPath on {{ target_node }}.
 
     - name: Apply deny-all NetworkPolicy for matched pod labels
       kubernetes.core.k8s:

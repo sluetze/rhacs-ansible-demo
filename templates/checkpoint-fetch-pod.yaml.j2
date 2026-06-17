@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ checkpoint_fetch_pod_name }}
+  namespace: {{ evidence_ir_namespace | default('rhacs-incident-response') }}
+  labels:
+    app: rhacs-ir-checkpoint-fetch
+    app.kubernetes.io/managed-by: rhacs-incident-response
+    rhacs-ir/incident: "{{ ansible_date_time.epoch }}"
+spec:
+  nodeName: {{ target_node }}
+  restartPolicy: Never
+  containers:
+    - name: {{ checkpoint_fetch_container_name | default('checkpoint-fetch') }}
+      image: "{{ checkpoint_fetch_image | default('registry.access.redhat.com/ubi9:latest') }}"
+      imagePullPolicy: IfNotPresent
+      command:
+        - /bin/sh
+        - -c
+        - sleep infinity
+      securityContext:
+        privileged: true
+        runAsUser: 0
+      volumeMounts:
+        - name: checkpoints
+          mountPath: /checkpoints
+          readOnly: true
+  volumes:
+    - name: checkpoints
+      hostPath:
+        path: /var/lib/kubelet/checkpoints
+        type: Directory

@@ -243,14 +243,16 @@ In **RHACS**: Integrations → **Generic webhook** → endpoint URL from your ED
 
 ## 5. Forensic checkpoint notes
 
-- Checkpoint is invoked with `POST /api/v1/nodes/{node}/proxy/checkpoint/{namespace}/{pod}/{container}`; the response lists on-node `.tar` paths. The playbook then `GET`s each archive via the same node proxy and stores the tarball in evidence (not the Ansible `uri` register dump).
+- Checkpoint is invoked with `POST /api/v1/nodes/{node}/proxy/checkpoint/{namespace}/{pod}/{container}`. The kubelet API is **create-only** — it returns on-node `.tar` paths but does not stream the file. The playbook deploys a short-lived **fetch pod** on the target node (`nodeName` + read-only `hostPath` of `/var/lib/kubelet/checkpoints`), copies each archive with `k8s_cp`, then deletes the pod.
 - **OpenShift 4.17+** maps checkpoint calls to the `nodes/checkpoint` subresource. Apply all of `infra/rbac/` (`oc apply -k infra/rbac/`):
   - `kube-apiserver-checkpoints` — grants `system:kube-apiserver` `nodes/checkpoint` **create/get** (required or every caller gets 403).
   - `rhacs-ir-openshift-ops` — grants `rhacs-ir-runner` the same plus existing forensics verbs.
-- Verify (use `--subresource`; `nodes/checkpoint` as a single resource name often reports **no** even when RBAC is correct):
+  - `rhacs-ir-checkpoint-fetch-scc` — binds `privileged` SCC to `rhacs-ir-runner` for the on-demand fetch pod (hostPath + root-owned checkpoint tars).
+- Verify RBAC (use `--subresource`; `nodes/checkpoint` as a single resource name often reports **no** even when RBAC is correct):
   `oc auth can-i create nodes --subresource=checkpoint --as=system:serviceaccount:rhacs-incident-response:rhacs-ir-runner`
   Or: `oc auth can-i --list --as=system:serviceaccount:rhacs-incident-response:rhacs-ir-runner | grep checkpoint`
-- If the API returns 404, confirm **CRI-U** on workers per current OpenShift documentation.
+- **Failure modes:** 403 = RBAC/apiserver binding; 404 = CRI-U off or pod gone; 500 with CRIU/crun = runtime limitation (e.g. established TCP sockets); fetch errors = SCC/hostPath/`k8s_cp`. See `checkpoint-error.json` (`phase`: `create` or `fetch`).
+- Set `checkpoint_fetch_enabled: false` to keep only `checkpoint-manifest.json` (skip hostPath fetch pod).
 - Checkpoints are sensitive; store evidence only in secured locations.
 
 ## Security

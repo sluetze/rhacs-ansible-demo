@@ -1,0 +1,17 @@
+# Privileged SCC for on-demand checkpoint fetch pods (hostPath + root-owned tars).
+# Apply: oc apply -k infra/rbac/
+# Equivalent: oc adm policy add-scc-to-user privileged -z rhacs-ir-runner -n rhacs-incident-response
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rhacs-ir-runner-privileged
+  namespace: rhacs-incident-response
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:privileged
+subjects:
+  - kind: ServiceAccount
+    name: rhacs-ir-runner
+    namespace: rhacs-incident-response
