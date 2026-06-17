@@ -91,6 +91,13 @@
         status_code: [200]
       no_log: true
 
+    # AAP project sync pip-installs collection deps and can upgrade kubernetes to 36+,
+    # which drops Bearer auth from kubernetes.core (system:anonymous 403). Pin before k8s_* tasks.
+    - name: Pin kubernetes Python client for kubernetes.core bearer auth
+      ansible.builtin.pip:
+        name: "kubernetes>=28.0.0,<36.0.0"
+        state: present
+
     - name: Print full event
       ansible.builtin.debug:
         var: ansible_eda.event
